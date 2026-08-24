@@ -1,0 +1,31 @@
+name: Neobus Ticket Hunter
+
+on:
+  schedule:
+    # Uruchamiaj automatycznie co 20 minut
+    - cron: '*/20 * * * *'
+  # Pozwala także uruchomić bota ręcznie jednym kliknięciem z panelu GitHuba
+  workflow_dispatch:
+
+jobs:
+  check-tickets:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Pobierz kod repozytorium
+        uses: actions/checkout@v4
+
+      - name: Przygotuj środowisko Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Zainstaluj biblioteki
+        run: |
+          pip install requests
+
+      - name: Uruchom bota
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          python fare_hunter.py
