@@ -246,30 +246,37 @@ def get_courses(
 
 
 def check_route(route_label: str, from_id: str, to_id: str, dates_list: list):
-    print(f"\n🚌 TRASA: {route_label} (Liczba dni: {len(dates_list)})")
+    print(f"🚌 TRASA: {route_label}")
     all_courses = []
+    consecutive_empty_days = 0
 
     for d in dates_list:
         courses = get_courses(
             from_id,
-            STOPS["gliwice"]["name"]
-            if from_id == "123"
-            else STOPS["domaradz"]["name"],
+            STOPS["gliwice"]["name"] if from_id == "123" else STOPS["domaradz"]["name"],
             to_id,
-            STOPS["domaradz"]["name"]
-            if to_id == "47"
-            else STOPS["gliwice"]["name"],
+            STOPS["domaradz"]["name"] if to_id == "47" else STOPS["gliwice"]["name"],
             d,
         )
 
-        for c in courses:
-            all_courses.append({
-                "route": route_label,
-                "date": d,
-                "hours": c["hours"],
-                "price": c["price"],
-            })
-        time.sleep(0.6)  # Zoptymalizowany czas odpytywania
+        if courses:
+            consecutive_empty_days = 0
+            for c in courses:
+                all_courses.append({
+                    "route": route_label,
+                    "date": d,
+                    "hours": c["hours"],
+                    "price": c["price"],
+                })
+        else:
+            consecutive_empty_days += 1
+
+        # Jeśli minęło 5 pustych dni z rzędu (np. minęliśmy święta i dotarliśmy do końca puli)
+        if consecutive_empty_days >= 5:
+            print(f"🛑 [Koniec rozkładu] Brak kursów przez 5 kolejnych dni. Zatrzymuję przeszukiwanie na dacie {d}.")
+            break
+
+        time.sleep(0.4)
 
     return all_courses
 
