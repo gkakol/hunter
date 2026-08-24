@@ -10,7 +10,7 @@ jobs:
   check-tickets:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Uprawnienia do zapisu w repozytorium
+      contents: write
 
     steps:
       - name: Pobierz kod repozytorium
@@ -23,7 +23,7 @@ jobs:
 
       - name: Zainstaluj biblioteki
         run: |
-          pip install requests
+          pip install requests pandas matplotlib
 
       - name: Uruchom bota i zbierz dane
         env:
@@ -31,10 +31,14 @@ jobs:
         run: |
           python fare_hunter.py
 
-      - name: Zapisz historię cen w repozytorium
+      - name: Wygeneruj wykres cen
+        run: |
+          python generate_chart.py
+
+      - name: Zapisz historię i wykres w repozytorium
         run: |
           git config --global user.name "Neobus Hunter Bot"
           git config --global user.email "bot@neobushunter.local"
-          git add ceny_historia.csv
-          git commit -m "Aktualizacja historii cen biletów [skip ci]" || echo "Brak nowych zmian do zapisu"
+          git add ceny_historia.csv wykres_cen.png
+          git commit -m "Aktualizacja cen i wykresu [skip ci]" || echo "Brak zmian do zapisu"
           git push
