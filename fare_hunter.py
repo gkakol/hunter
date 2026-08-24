@@ -1,4 +1,5 @@
 import csv
+from datetime import date, timedelta
 import json
 import os
 import re
@@ -6,9 +7,11 @@ import time
 import requests
 
 # =====================================================================
-#                        KONFIGURACJA TRAS
+#                        TWOJA KONFIGURACJA
 # =====================================================================
-DATES_GLIWICE_DOMARADZ = [
+
+# 1. DNI, NA KTÓRE CHCESZ OTRZYMAĆ POWIADOMIENIE NA DISCORDZIE
+MY_TRIP_DATES_GLIWICE_DOMARADZ = [
     "11.09.2026",
     "16.09.2026",
     "17.09.2026",
@@ -24,7 +27,7 @@ DATES_GLIWICE_DOMARADZ = [
     "20.11.2026",
 ]
 
-DATES_DOMARADZ_GLIWICE = [
+MY_TRIP_DATES_DOMARADZ_GLIWICE = [
     "13.09.2026",
     "20.09.2026",
     "27.09.2026",
@@ -38,10 +41,13 @@ DATES_DOMARADZ_GLIWICE = [
     "22.11.2026",
 ]
 
-TARGET_MAX_PRICE = 50.00
+TARGET_MAX_PRICE = 45.00  # Próg cenowy dla alertu
 TICKET_TYPE = "normal"  # 'student' lub 'normal'
-CSV_FILE = "ceny_historia.csv"
 
+# Ile dni w przód zbierać dane do historii CSV (np. 75 dni = ok. 2.5 miesiąca)
+DAYS_AHEAD_TO_TRACK = 75
+
+CSV_FILE = "ceny_historia.csv"
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
 
 STOPS = {
@@ -53,21 +59,33 @@ STOPS = {
 }
 
 
+# =====================================================================
+#                   FUNKCJE POMOCNICZE I ZAPIS
+# =====================================================================
+
+
+def generate_all_future_dates(days_count: int) -> list:
+    """Generuje listę wszystkich kolejnych dni od jutra na N dni w przód."""
+    start_date = date.today() + timedelta(days=1)
+    return [
+        (start_date + timedelta(days=i)).strftime("%d.%m.%Y")
+        for i in range(days_count)
+    ]
+
+
 def save_to_csv(courses_list: list):
-    """Zapisuje kurs do CSV tylko wtedy, gdy zmieniła się cena lub kurs jest nowy."""
+    """Zapisuje kurs do CSV tylko w przypadku nowości lub zmiany ceny (CDC)."""
     if not courses_list:
         return
 
     file_exists = os.path.isfile(CSV_FILE)
     last_known_prices = {}
 
-    # 1. Odczytujemy ostatnio zarejestrowaną cenę dla każdego kursu
     if file_exists:
         try:
             with open(CSV_FILE, mode="r", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    # Klucz jednoznacznie identyfikujący kurs: (Trasa, Data, Godziny)
                     key = (
                         row.get("Trasa"),
                         row.get("Data kursu"),
@@ -75,22 +93,18 @@ def save_to_csv(courses_list: list):
                     )
                     try:
                         last_known_prices[key] = float(row.get("Cena (PLN)", 0))
-                    except ValueError:
+                    except (ValueError, TypeError):
                         pass
         except Exception as e:
-            print(f"[!] Ostrzeżenie przy czytaniu CSV: {e}")
+            print(f"[!] Ostrzeżenie przy odczycie CSV: {e}")
 
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     records_to_add = []
 
-    # 2. Porównujemy świeżo pobrane ceny z poprzednimi
     for c in courses_list:
         key = (c["route"], c["date"], c["hours"])
         prev_price = last_known_prices.get(key)
 
-        # Zapisujemy tylko jeśli:
-        # a) Nigdy wcześniej nie widzieliśmy tego kursu (prev_price is None)
-        # b) Cena uległa zmianie (abs(c["price"] - prev_price) > 0.01)
         if prev_price is None or abs(c["price"] - prev_price) > 0.01:
             records_to_add.append([
                 timestamp,
@@ -100,7 +114,6 @@ def save_to_csv(courses_list: list):
                 f"{c['price']:.2f}",
             ])
 
-    # 3. Dopisujemy do pliku tylko realne zmiany
     if records_to_add:
         with open(CSV_FILE, mode="a", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
@@ -114,15 +127,14 @@ def save_to_csv(courses_list: list):
                 ])
             writer.writerows(records_to_add)
         print(
-            f"💾 [Optymalizacja CSV] Wykryto i zapisano {len(records_to_add)} nowych/zmienionych cen (odrzucono {len(courses_list) - len(records_to_add)} duplikatów)."
+            f"💾 [CSV] Zapisano {len(records_to_add)} nowych/zmienionych cen (odrzucono {len(courses_list) - len(records_to_add)} duplikatów)."
         )
     else:
-        print(
-            f"⚡ [Optymalizacja CSV] Ceny bez zmian. Pomijam dopisywanie {len(courses_list)} duplikatów."
-        )
+        print("⚡ [CSV] Wszystkie ceny bez zmian. Brak duplikatów.")
 
 
 def send_discord_alert(cheap_tickets: list):
+    """Wysyła alert na Discorda w paczkach < 2000 znaków."""
     if not DISCORD_WEBHOOK_URL:
         return
 
@@ -132,9 +144,7 @@ def send_discord_alert(cheap_tickets: list):
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
     }
 
-    header_text = (
-        f"🔥 **ZNALEZIONO TANIE BILETY NEOBUS ({count} szt.)!** @everyone\n"
-    )
+    header_text = f"🔥 **ZNALEZIONO TANIE BILETY NA TWOJE WYBRANE TRASY ({count} szt.)!** @everyone\n"
     footer_text = "\n🛒 **Kup bilet:** https://neobus.pl/"
 
     ticket_blocks = [
@@ -165,6 +175,11 @@ def send_discord_alert(cheap_tickets: list):
             time.sleep(0.5)
         except Exception as e:
             print(f"[!] Błąd Discord: {e}")
+
+
+# =====================================================================
+#                        LOGIKA API NEOBUS
+# =====================================================================
 
 
 def get_courses(
@@ -231,7 +246,7 @@ def get_courses(
 
 
 def check_route(route_label: str, from_id: str, to_id: str, dates_list: list):
-    print(f"\n🚌 TRASA: {route_label}")
+    print(f"\n🚌 TRASA: {route_label} (Liczba dni: {len(dates_list)})")
     all_courses = []
 
     for d in dates_list:
@@ -248,53 +263,82 @@ def check_route(route_label: str, from_id: str, to_id: str, dates_list: list):
         )
 
         for c in courses:
-            print(f"  [{d}] {c['hours']} -> {c['price']:.2f} PLN")
             all_courses.append({
                 "route": route_label,
                 "date": d,
                 "hours": c["hours"],
                 "price": c["price"],
             })
-        time.sleep(1.5)
+        time.sleep(0.6)  # Zoptymalizowany czas odpytywania
 
     return all_courses
 
 
+# =====================================================================
+#                           GŁÓWNY PROGRAM
+# =====================================================================
+
+
 def main():
-    print("=== SPRAWDZANIE KURSÓW NEOBUS + ZAPIS DO CSV ===")
+    print("=== NEOBUS FARE HUNTER (ARCHIWIZACJA + ALERT CELOWANY) ===")
+
+    # Generujemy listę wszystkich kolejnych dni do monitoringu i archiwum
+    all_future_dates = generate_all_future_dates(DAYS_AHEAD_TO_TRACK)
+    print(
+        f"📅 Monitorowany zakres dat: {all_future_dates[0]} -> {all_future_dates[-1]}"
+    )
+
     all_courses = []
 
-    if DATES_GLIWICE_DOMARADZ:
-        all_courses.extend(
-            check_route(
-                "Gliwice -> Domaradz",
-                STOPS["gliwice"]["id"],
-                STOPS["domaradz"]["id"],
-                DATES_GLIWICE_DOMARADZ,
-            )
+    # 1. Sprawdzamy wszystkie dni dla Gliwice -> Domaradz
+    all_courses.extend(
+        check_route(
+            "Gliwice -> Domaradz",
+            STOPS["gliwice"]["id"],
+            STOPS["domaradz"]["id"],
+            all_future_dates,
         )
+    )
 
-    if DATES_DOMARADZ_GLIWICE:
-        all_courses.extend(
-            check_route(
-                "Domaradz -> Gliwice",
-                STOPS["domaradz"]["id"],
-                STOPS["gliwice"]["id"],
-                DATES_DOMARADZ_GLIWICE,
-            )
+    # 2. Sprawdzamy wszystkie dni dla Domaradz -> Gliwice
+    all_courses.extend(
+        check_route(
+            "Domaradz -> Gliwice",
+            STOPS["domaradz"]["id"],
+            STOPS["gliwice"]["id"],
+            all_future_dates,
         )
+    )
 
-    # 1. Zapisujemy wszystkie kursy do pliku CSV
+    # 3. Zapisujemy całą bazę do CSV (tylko zmiany)
     if all_courses:
         save_to_csv(all_courses)
 
-    # 2. Wysyłamy alert jeśli są promocyjne bilety
-    cheap = [c for c in all_courses if 0 < c["price"] <= TARGET_MAX_PRICE]
-    if cheap:
-        print(f"\n🚨 Znaleziono {len(cheap)} tanich biletów! Wysyłam alert...")
-        send_discord_alert(cheap)
+    # 4. Filtrujemy okazje wyłącznie pod kątem Twoich wybranych dat
+    alert_tickets = []
+    for c in all_courses:
+        if c["price"] <= TARGET_MAX_PRICE and c["price"] > 0:
+            if (
+                c["route"] == "Gliwice -> Domaradz"
+                and c["date"] in MY_TRIP_DATES_GLIWICE_DOMARADZ
+            ):
+                alert_tickets.append(c)
+            elif (
+                c["route"] == "Domaradz -> Gliwice"
+                and c["date"] in MY_TRIP_DATES_DOMARADZ_GLIWICE
+            ):
+                alert_tickets.append(c)
+
+    # 5. Wysyłanie alertu jeśli znaleziono bilet na Twoją datę
+    if alert_tickets:
+        print(
+            f"\n🚨 Znaleziono {len(alert_tickets)} tanich biletów na Twoje wybrane terminy!"
+        )
+        send_discord_alert(alert_tickets)
     else:
-        print(f"\n[i] Brak biletów w cenie <= {TARGET_MAX_PRICE:.2f} PLN.")
+        print(
+            f"\n[i] Brak tanich biletów (<= {TARGET_MAX_PRICE:.2f} PLN) na Twoje zaplanowane wyjazdy."
+        )
 
 
 if __name__ == "__main__":
