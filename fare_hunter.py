@@ -38,7 +38,7 @@ DATES_DOMARADZ_GLIWICE = [
     "22.11.2026",
 ]
 
-TARGET_MAX_PRICE = 97.00
+TARGET_MAX_PRICE = 50.00
 TICKET_TYPE = "normal"  # 'student' lub 'normal'
 CSV_FILE = "ceny_historia.csv"
 
