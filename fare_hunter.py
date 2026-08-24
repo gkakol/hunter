@@ -54,27 +54,45 @@ STOPS = {
 
 
 def save_to_csv(courses_list: list):
-    """Dopisuje pobrane kursy do pliku CSV z historią."""
+    """Zapisuje kurs do CSV tylko wtedy, gdy zmieniła się cena lub kurs jest nowy."""
     if not courses_list:
         return
 
     file_exists = os.path.isfile(CSV_FILE)
+    last_known_prices = {}
+
+    # 1. Odczytujemy ostatnio zarejestrowaną cenę dla każdego kursu
+    if file_exists:
+        try:
+            with open(CSV_FILE, mode="r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    # Klucz jednoznacznie identyfikujący kurs: (Trasa, Data, Godziny)
+                    key = (
+                        row.get("Trasa"),
+                        row.get("Data kursu"),
+                        row.get("Godzina kursu"),
+                    )
+                    try:
+                        last_known_prices[key] = float(row.get("Cena (PLN)", 0))
+                    except ValueError:
+                        pass
+        except Exception as e:
+            print(f"[!] Ostrzeżenie przy czytaniu CSV: {e}")
+
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    records_to_add = []
 
-    with open(CSV_FILE, mode="a", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        # Jeśli plik powstaje pierwszy raz, dodajemy nagłówki kolumn
-        if not file_exists:
-            writer.writerow([
-                "Data sprawdzenia",
-                "Trasa",
-                "Data kursu",
-                "Godzina kursu",
-                "Cena (PLN)",
-            ])
+    # 2. Porównujemy świeżo pobrane ceny z poprzednimi
+    for c in courses_list:
+        key = (c["route"], c["date"], c["hours"])
+        prev_price = last_known_prices.get(key)
 
-        for c in courses_list:
-            writer.writerow([
+        # Zapisujemy tylko jeśli:
+        # a) Nigdy wcześniej nie widzieliśmy tego kursu (prev_price is None)
+        # b) Cena uległa zmianie (abs(c["price"] - prev_price) > 0.01)
+        if prev_price is None or abs(c["price"] - prev_price) > 0.01:
+            records_to_add.append([
                 timestamp,
                 c["route"],
                 c["date"],
@@ -82,9 +100,26 @@ def save_to_csv(courses_list: list):
                 f"{c['price']:.2f}",
             ])
 
-    print(
-        f"💾 [Historia] Zapisano {len(courses_list)} wpisów do pliku {CSV_FILE}"
-    )
+    # 3. Dopisujemy do pliku tylko realne zmiany
+    if records_to_add:
+        with open(CSV_FILE, mode="a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow([
+                    "Data sprawdzenia",
+                    "Trasa",
+                    "Data kursu",
+                    "Godzina kursu",
+                    "Cena (PLN)",
+                ])
+            writer.writerows(records_to_add)
+        print(
+            f"💾 [Optymalizacja CSV] Wykryto i zapisano {len(records_to_add)} nowych/zmienionych cen (odrzucono {len(courses_list) - len(records_to_add)} duplikatów)."
+        )
+    else:
+        print(
+            f"⚡ [Optymalizacja CSV] Ceny bez zmian. Pomijam dopisywanie {len(courses_list)} duplikatów."
+        )
 
 
 def send_discord_alert(cheap_tickets: list):
