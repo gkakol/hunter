@@ -1,3 +1,4 @@
+import csv
 import json
 import os
 import re
@@ -39,8 +40,8 @@ DATES_DOMARADZ_GLIWICE = [
 
 TARGET_MAX_PRICE = 45.00
 TICKET_TYPE = "normal"  # 'student' lub 'normal'
+CSV_FILE = "ceny_historia.csv"
 
-# Pobieranie webhooka z sejfu GitHub Secrets
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
 
 STOPS = {
@@ -52,10 +53,42 @@ STOPS = {
 }
 
 
+def save_to_csv(courses_list: list):
+    """Dopisuje pobrane kursy do pliku CSV z historią."""
+    if not courses_list:
+        return
+
+    file_exists = os.path.isfile(CSV_FILE)
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+
+    with open(CSV_FILE, mode="a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        # Jeśli plik powstaje pierwszy raz, dodajemy nagłówki kolumn
+        if not file_exists:
+            writer.writerow([
+                "Data sprawdzenia",
+                "Trasa",
+                "Data kursu",
+                "Godzina kursu",
+                "Cena (PLN)",
+            ])
+
+        for c in courses_list:
+            writer.writerow([
+                timestamp,
+                c["route"],
+                c["date"],
+                c["hours"],
+                f"{c['price']:.2f}",
+            ])
+
+    print(
+        f"💾 [Historia] Zapisano {len(courses_list)} wpisów do pliku {CSV_FILE}"
+    )
+
+
 def send_discord_alert(cheap_tickets: list):
-    """Wysyła powiadomienie na Discorda z dzieleniem wiadomości na paczki < 2000 znaków."""
     if not DISCORD_WEBHOOK_URL:
-        print("[!] Brak zmiennej DISCORD_WEBHOOK_URL!")
         return
 
     count = len(cheap_tickets)
@@ -69,12 +102,11 @@ def send_discord_alert(cheap_tickets: list):
     )
     footer_text = "\n🛒 **Kup bilet:** https://neobus.pl/"
 
-    ticket_blocks = []
-    for t in cheap_tickets:
-        ticket_blocks.append(
-            f"📍 **{t.get('route')}** ({t.get('date')})\n"
-            f"   ⏰ Kurs: **{t.get('hours')}** | 💰 Cena: **{t.get('price'):.2f} PLN**\n"
-        )
+    ticket_blocks = [
+        f"📍 **{t.get('route')}** ({t.get('date')})\n"
+        f"   ⏰ Kurs: **{t.get('hours')}** | 💰 Cena: **{t.get('price'):.2f} PLN**\n"
+        for t in cheap_tickets
+    ]
 
     messages = []
     curr = header_text
@@ -89,19 +121,15 @@ def send_discord_alert(cheap_tickets: list):
 
     for msg in messages:
         try:
-            r = requests.post(
+            requests.post(
                 DISCORD_WEBHOOK_URL,
                 json={"username": "Neobus Tracker", "content": msg},
                 headers=headers,
                 timeout=10,
             )
-            if r.status_code in [200, 204]:
-                print("✅ Wysłano powiadomienie na Discord!")
-            else:
-                print(f"[!] Błąd Discord ({r.status_code}): {r.text}")
             time.sleep(0.5)
         except Exception as e:
-            print(f"[!] Błąd połączenia z Discordem: {e}")
+            print(f"[!] Błąd Discord: {e}")
 
 
 def get_courses(
@@ -169,7 +197,7 @@ def get_courses(
 
 def check_route(route_label: str, from_id: str, to_id: str, dates_list: list):
     print(f"\n🚌 TRASA: {route_label}")
-    cheap_found = []
+    all_courses = []
 
     for d in dates_list:
         courses = get_courses(
@@ -186,26 +214,23 @@ def check_route(route_label: str, from_id: str, to_id: str, dates_list: list):
 
         for c in courses:
             print(f"  [{d}] {c['hours']} -> {c['price']:.2f} PLN")
-            if 0 < c["price"] <= TARGET_MAX_PRICE:
-                cheap_found.append(
-                    {
-                        "route": route_label,
-                        "date": d,
-                        "hours": c["hours"],
-                        "price": c["price"],
-                    }
-                )
+            all_courses.append({
+                "route": route_label,
+                "date": d,
+                "hours": c["hours"],
+                "price": c["price"],
+            })
         time.sleep(1.5)
 
-    return cheap_found
+    return all_courses
 
 
 def main():
-    print("=== SPRAWDZANIE KURSÓW NEOBUS W GITHUB ACTIONS ===")
-    all_cheap = []
+    print("=== SPRAWDZANIE KURSÓW NEOBUS + ZAPIS DO CSV ===")
+    all_courses = []
 
     if DATES_GLIWICE_DOMARADZ:
-        all_cheap.extend(
+        all_courses.extend(
             check_route(
                 "Gliwice -> Domaradz",
                 STOPS["gliwice"]["id"],
@@ -215,7 +240,7 @@ def main():
         )
 
     if DATES_DOMARADZ_GLIWICE:
-        all_cheap.extend(
+        all_courses.extend(
             check_route(
                 "Domaradz -> Gliwice",
                 STOPS["domaradz"]["id"],
@@ -224,9 +249,15 @@ def main():
             )
         )
 
-    if all_cheap:
-        print(f"\n🚨 Znaleziono {len(all_cheap)} tanich biletów! Wysyłam alert...")
-        send_discord_alert(all_cheap)
+    # 1. Zapisujemy wszystkie kursy do pliku CSV
+    if all_courses:
+        save_to_csv(all_courses)
+
+    # 2. Wysyłamy alert jeśli są promocyjne bilety
+    cheap = [c for c in all_courses if 0 < c["price"] <= TARGET_MAX_PRICE]
+    if cheap:
+        print(f"\n🚨 Znaleziono {len(cheap)} tanich biletów! Wysyłam alert...")
+        send_discord_alert(cheap)
     else:
         print(f"\n[i] Brak biletów w cenie <= {TARGET_MAX_PRICE:.2f} PLN.")
 
