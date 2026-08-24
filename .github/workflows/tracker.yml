@@ -4,12 +4,13 @@ on:
   schedule:
     # Uruchamiaj automatycznie co 20 minut
     - cron: '*/20 * * * *'
-  # Pozwala także uruchomić bota ręcznie jednym kliknięciem z panelu GitHuba
   workflow_dispatch:
 
 jobs:
   check-tickets:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Uprawnienia do zapisu w repozytorium
 
     steps:
       - name: Pobierz kod repozytorium
@@ -24,8 +25,16 @@ jobs:
         run: |
           pip install requests
 
-      - name: Uruchom bota
+      - name: Uruchom bota i zbierz dane
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
           python fare_hunter.py
+
+      - name: Zapisz historię cen w repozytorium
+        run: |
+          git config --global user.name "Neobus Hunter Bot"
+          git config --global user.email "bot@neobushunter.local"
+          git add ceny_historia.csv
+          git commit -m "Aktualizacja historii cen biletów [skip ci]" || echo "Brak nowych zmian do zapisu"
+          git push
