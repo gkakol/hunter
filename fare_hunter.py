@@ -41,7 +41,7 @@ MY_TRIP_DATES_DOMARADZ_GLIWICE = [
     "22.11.2026",
 ]
 
-TARGET_MAX_PRICE = 97.00  # Próg promocyjny (PLN)
+TARGET_MAX_PRICE =60.00  # Próg promocyjny (PLN)
 TICKET_TYPE = "normal"  # 'student' lub 'normal'
 DAYS_FORWARD_SEARCH = 120  # Sprawdzany zakres w przód
 
