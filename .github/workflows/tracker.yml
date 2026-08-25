@@ -2,7 +2,6 @@ name: Neobus Ticket Hunter
 
 on:
   schedule:
-    # Uruchamiaj automatycznie co 20 minut
     - cron: '*/20 * * * *'
   workflow_dispatch:
 
@@ -25,20 +24,20 @@ jobs:
         run: |
           pip install requests pandas matplotlib
 
-      - name: Uruchom bota i zbierz dane
+      - name: Uruchom bota
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
           python fare_hunter.py
 
-      - name: Wygeneruj wykres cen
+      - name: Wygeneruj wykresy
         run: |
           python generate_chart.py
 
-      - name: Zapisz historię i wykres w repozytorium
+      - name: Zapisz stan w repozytorium
         run: |
           git config --global user.name "Neobus Hunter Bot"
           git config --global user.email "bot@neobushunter.local"
-          git add ceny_historia.csv wykres_cen.png
-          git commit -m "Aktualizacja cen i wykresu [skip ci]" || echo "Brak zmian do zapisu"
+          git add ceny_gliwice_domaradz.csv ceny_domaradz_gliwice.csv wykres_gliwice_domaradz.png wykres_domaradz_gliwice.png ostatnia_data_sprzedazy.txt
+          git commit -m "Aktualizacja cen i wykresów obu tras [skip ci]" || echo "Brak zmian do zapisu"
           git push
