@@ -41,7 +41,7 @@ MY_TRIP_DATES_DOMARADZ_GLIWICE = [
     "22.11.2026",
 ]
 
-TARGET_MAX_PRICE = 45.00  # Próg promocyjny (PLN)
+TARGET_MAX_PRICE = 97.00  # Próg promocyjny (PLN)
 TICKET_TYPE = "normal"  # 'student' lub 'normal'
 DAYS_FORWARD_SEARCH = 120  # Sprawdzany zakres w przód
 
@@ -150,34 +150,41 @@ def send_discord_message(content: str):
 
 
 def send_discord_alert(cheap_tickets: list):
-    """Wysyła alert o tanich biletach wraz z zbadaną pulą miejsc."""
-    if not DISCORD_WEBHOOK_URL or not cheap_tickets:
-        return
+  """Wysyła estetyczny alert o tanich biletach z bezpośrednimi linkami."""
+  if not DISCORD_WEBHOOK_URL or not cheap_tickets:
+    return
 
-    count = len(cheap_tickets)
-    header = f"🔥 **ZNALEZIONO TANIE BILETY NA TWOJE TERMINY ({count} szt.)!** @everyone\n"
-    footer = "\n🛒 **Kup bilet natychmiast:** https://neobus.pl/"
+  count = len(cheap_tickets)
+  header = (
+      f"🔥 **ZNALEZIONO TANIE BILETY NA TWOJE TERMINY ({count} szt.)!**"
+      " @everyone\n"
+  )
 
-    blocks = [
-        f"📍 **{t['route']}** ({t['date']})\n"
-        f"   ⏰ Kurs: **{t['hours']}**\n"
-        f"   💰 Cena: **{t['price']:.2f} PLN** | 💺 **{t.get('seat_info', 'Dostępne')}**\n"
-        for t in cheap_tickets
-    ]
+  blocks = []
+  for t in cheap_tickets:
+    # Bezpośredni link i podsumowanie konkretnego kursu
+    block = (
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📍 **{t['route']}** | 📅 **{t['date']}**\n"
+        f"⏰ Godzina: **{t['hours']}**\n"
+        f"💰 Cena: **{t['price']:.2f} PLN** | 💺 **{t.get('seat_info', 'Dostępne')}**\n"
+        f"🔗 **[👉 KLIKNIJ TUTAJ, ABY KUPIĆ BILET 👈](https://neobus.pl/)**\n"
+    )
+    blocks.append(block)
 
-    messages, curr = [], header
-    for b in blocks:
-        if len(curr) + len(b) + len(footer) > 1800:
-            messages.append(curr + footer)
-            curr = header + b
-        else:
-            curr += b
-    if curr:
-        messages.append(curr + footer)
+  messages, curr = [], header
+  for b in blocks:
+    if len(curr) + len(b) > 1850:
+      messages.append(curr)
+      curr = header + b
+    else:
+      curr += b
+  if curr:
+    messages.append(curr)
 
-    for msg in messages:
-        send_discord_message(msg)
-        time.sleep(0.5)
+  for msg in messages:
+    send_discord_message(msg)
+    time.sleep(0.5)
 
 
 def check_and_notify_new_schedule(active_dates: list):
