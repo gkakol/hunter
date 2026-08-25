@@ -10,7 +10,7 @@ import requests
 #                        KONFIGURACJA
 # =====================================================================
 
-# 1. DNI, NA KTÓRE CHCESZ OTRZYMAĆ POWIADOMIENIE O TANIM BILECIE
+# 1. DNI, NA KTÓRE CHCESZ OTRZYMAĆ POWIADOMIENIE NA DISCORDZIE
 MY_TRIP_DATES_GLIWICE_DOMARADZ = [
     "11.09.2026",
     "16.09.2026",
@@ -41,9 +41,9 @@ MY_TRIP_DATES_DOMARADZ_GLIWICE = [
     "22.11.2026",
 ]
 
-TARGET_MAX_PRICE = 45.00  # Maksymalna cena uznawana za okazję
+TARGET_MAX_PRICE = 45.00  # Próg promocyjny (PLN)
 TICKET_TYPE = "normal"  # 'student' lub 'normal'
-DAYS_FORWARD_SEARCH = 120  # Zakres poszukiwań w przód (ok. 4 miesiące)
+DAYS_FORWARD_SEARCH = 120  # Sprawdzany zakres w przód
 
 CSV_GLIWICE_DOMARADZ = "ceny_gliwice_domaradz.csv"
 CSV_DOMARADZ_GLIWICE = "ceny_domaradz_gliwice.csv"
@@ -60,7 +60,7 @@ STOPS = {
 
 
 # =====================================================================
-#                   DYNAMIKA DAT I OBSŁUGA CSV
+#                   DYNAMIKA DAT I BAZA CSV
 # =====================================================================
 
 
@@ -78,7 +78,7 @@ def save_route_to_csv(courses_list: list, csv_filename: str):
         return
 
     file_exists = os.path.isfile(csv_filename)
-    last_records = {}
+    last_prices = {}
 
     if file_exists:
         try:
@@ -87,33 +87,25 @@ def save_route_to_csv(courses_list: list, csv_filename: str):
                 for row in reader:
                     key = (row.get("Data kursu"), row.get("Godzina kursu"))
                     try:
-                        price = float(row.get("Cena (PLN)", 0))
-                        seats = row.get("Wolne miejsca", "B/D")
-                        last_records[key] = (price, seats)
+                        last_prices[key] = float(row.get("Cena (PLN)", 0))
                     except (ValueError, TypeError):
                         pass
         except Exception as e:
-            print(f"[!] Ostrzeżenie przy odczycie {csv_filename}: {e}")
+            print(f"[!] Błąd odczytu {csv_filename}: {e}")
 
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     records_to_add = []
 
     for c in courses_list:
         key = (c["date"], c["hours"])
-        prev = last_records.get(key)
-        
-        # Zapisujemy, jeśli kurs jest nowy LUB zmieniła się cena LUB zmieniła się liczba miejsc
-        is_new = prev is None
-        price_changed = prev and abs(c["price"] - prev[0]) > 0.01
-        seats_changed = prev and str(c.get("seats")) != str(prev[1])
+        prev_price = last_prices.get(key)
 
-        if is_new or price_changed or seats_changed:
+        if prev_price is None or abs(c["price"] - prev_price) > 0.01:
             records_to_add.append([
                 timestamp,
                 c["date"],
                 c["hours"],
                 f"{c['price']:.2f}",
-                str(c.get("seats", "B/D")),
             ])
 
     if records_to_add:
@@ -125,12 +117,13 @@ def save_route_to_csv(courses_list: list, csv_filename: str):
                     "Data kursu",
                     "Godzina kursu",
                     "Cena (PLN)",
-                    "Wolne miejsca",
                 ])
             writer.writerows(records_to_add)
-        print(f"💾 [{csv_filename}] Zaktualizowano {len(records_to_add)} wpisów.")
+        print(
+            f"💾 [{csv_filename}] Zapisano {len(records_to_add)} nowych/zmienionych cen."
+        )
     else:
-        print(f"⚡ [{csv_filename}] Brak zmian cen ani liczby miejsc.")
+        print(f"⚡ [{csv_filename}] Ceny bez zmian.")
 
 
 # =====================================================================
@@ -157,18 +150,18 @@ def send_discord_message(content: str):
 
 
 def send_discord_alert(cheap_tickets: list):
-    """Wysyła alert o tanich biletach z podziałem na paczki < 2000 znaków."""
+    """Wysyła alert o tanich biletach wraz z zbadaną pulą miejsc."""
     if not DISCORD_WEBHOOK_URL or not cheap_tickets:
         return
 
     count = len(cheap_tickets)
     header = f"🔥 **ZNALEZIONO TANIE BILETY NA TWOJE TERMINY ({count} szt.)!** @everyone\n"
-    footer = "\n🛒 **Kup bilet:** https://neobus.pl/"
+    footer = "\n🛒 **Kup bilet natychmiast:** https://neobus.pl/"
 
     blocks = [
         f"📍 **{t['route']}** ({t['date']})\n"
         f"   ⏰ Kurs: **{t['hours']}**\n"
-        f"   💰 Cena: **{t['price']:.2f} PLN** | 💺 Wolne miejsca: **{t.get('seats', 'B/D')}**\n"
+        f"   💰 Cena: **{t['price']:.2f} PLN** | 💺 **{t.get('seat_info', 'Dostępne')}**\n"
         for t in cheap_tickets
     ]
 
@@ -188,7 +181,7 @@ def send_discord_alert(cheap_tickets: list):
 
 
 def check_and_notify_new_schedule(active_dates: list):
-    """Wysyła alert, jeśli w sprzedaży pojawi się nowa pula na kolejny miesiąc."""
+    """Wysyła powiadomienie, gdy Neobus otworzy rezerwację na kolejny miesiąc."""
     if not active_dates:
         return
 
@@ -208,8 +201,8 @@ def check_and_notify_new_schedule(active_dates: list):
     if time.strptime(furthest, "%d.%m.%Y") > time.strptime(prev, "%d.%m.%Y"):
         msg = (
             f"📢 **NEOBUS OTWORZYŁ NOWĄ PULĘ BILETÓW!** @everyone\n\n"
-            f"📅 Sprzedaż wydłużona do: **{furthest}** (poprzednio: {prev})\n"
-            f"🚀 Bilety za 1 zł: https://neobus.pl/"
+            f"📅 Nowy zakres sprzedaży wydłużony do: **{furthest}** (było: {prev})\n"
+            f"🚀 Bilety promocyjne za 1 zł: https://neobus.pl/"
         )
         send_discord_message(msg)
         with open(LATEST_DATE_FILE, "w", encoding="utf-8") as f:
@@ -217,13 +210,19 @@ def check_and_notify_new_schedule(active_dates: list):
 
 
 # =====================================================================
-#                        LOGIKA API NEOBUS
+#                        LOGIKA ZAPYTAŃ API
 # =====================================================================
 
 
-def get_courses(
-    from_id: str, from_name: str, to_id: str, to_name: str, date_str: str
+def fetch_neobus_courses(
+    from_id: str,
+    from_name: str,
+    to_id: str,
+    to_name: str,
+    date_str: str,
+    passengers: int = 1,
 ):
+    """Wysyła zapytanie do API Neobusa dla zadanej liczby pasażerów."""
     session = requests.Session()
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
@@ -243,7 +242,7 @@ def get_courses(
             "ticket_type": TICKET_TYPE,
             "initial_stop": from_id,
             "final_stop": to_id,
-            "passengers": "1",
+            "passengers": str(passengers),
             "date_there": date_str,
             "date_return": "",
             "initial_stop_name": from_name,
@@ -259,18 +258,13 @@ def get_courses(
     content = raw.get("neotickets", raw) if isinstance(raw, dict) else raw
     data = json.loads(content) if isinstance(content, str) else content
 
-    # Szukanie informacji o wolnych miejscach w module
-    raw_str = str(raw)
-    seats_found = re.findall(r"(?:wolnych|miejsc|seats)[^\d]*(\d+)", raw_str, re.IGNORECASE)
-    default_seats = int(seats_found[0]) if seats_found else "B/D"
-
     courses = []
     if (
         isinstance(data, dict)
         and "ga4_data" in data
         and len(data["ga4_data"]) > 0
     ):
-        for idx, it in enumerate(data["ga4_data"][0].get("items", [])):
+        for it in data["ga4_data"][0].get("items", []):
             name = it.get("item_name", "")
             price = it.get("price") or it.get("discount", 0.0)
             try:
@@ -287,34 +281,63 @@ def get_courses(
                 else "Standardowy"
             )
 
-            # Dopasowanie foteli dla konkretnego kursu (jeśli jest lista)
-            course_seats = int(seats_found[idx]) if idx < len(seats_found) else default_seats
-
             if price > 0:
-                courses.append({
-                    "hours": hours_str,
-                    "price": price,
-                    "seats": course_seats,
-                })
+                courses.append({"hours": hours_str, "price": price})
     return courses
 
 
-def check_route(route_label: str, from_id: str, to_id: str, dates_list: list):
+def probe_seat_availability(
+    from_id: str,
+    from_name: str,
+    to_id: str,
+    to_name: str,
+    date_str: str,
+    target_hours: str,
+) -> str:
+    """Bada ile miejsc w promocyjnej cenie można maksymalnie zarezerwować."""
+    # Testujemy progi: 2, 4, 8, 15 osób
+    probe_levels = [2, 4, 8, 15]
+    max_confirmed = 1
+
+    for p in probe_levels:
+        time.sleep(0.3)
+        res = fetch_neobus_courses(
+            from_id, from_name, to_id, to_name, date_str, passengers=p
+        )
+        match = [c for c in res if c["hours"] == target_hours]
+        if match:
+            max_confirmed = p
+        else:
+            # Jeśli dla 'p' pasażerów kurs nie jest dostępny, kończymy badanie
+            break
+
+    if max_confirmed >= 15:
+        return "Duża pula (15+ wolnych miejsc)"
+    elif max_confirmed >= 8:
+        return "Pula 8+ wolnych miejsc"
+    elif max_confirmed >= 4:
+        return "Pula 4+ wolnych miejsc"
+    elif max_confirmed >= 2:
+        return "Pula 2-3 wolne miejsca"
+    else:
+        return "Ostatnie pojedyncze miejsce!"
+
+
+def check_route(
+    route_label: str,
+    from_id: str,
+    from_name: str,
+    to_id: str,
+    to_name: str,
+    dates_list: list,
+):
     print(f"🚌 Sprawdzam trasę: {route_label}...")
     courses = []
     empty_days = 0
 
     for d in dates_list:
-        found = get_courses(
-            from_id,
-            STOPS["gliwice"]["name"]
-            if from_id == "123"
-            else STOPS["domaradz"]["name"],
-            to_id,
-            STOPS["domaradz"]["name"]
-            if to_id == "47"
-            else STOPS["gliwice"]["name"],
-            d,
+        found = fetch_neobus_courses(
+            from_id, from_name, to_id, to_name, d, passengers=1
         )
         if found:
             empty_days = 0
@@ -324,14 +347,18 @@ def check_route(route_label: str, from_id: str, to_id: str, dates_list: list):
                     "date": d,
                     "hours": c["hours"],
                     "price": c["price"],
-                    "seats": c.get("seats", "B/D"),
+                    "from_id": from_id,
+                    "from_name": from_name,
+                    "to_id": to_id,
+                    "to_name": to_name,
                 })
         else:
             empty_days += 1
 
-        # Przerywamy skanowanie po 6 pustych dniach z rzędu (koniec rozkładu / puli)
         if empty_days >= 6:
-            print(f"🛑 [Koniec puli] Brak biletów od {d}. Przerywam skanowanie trasy.")
+            print(
+                f"🛑 [Koniec puli] Brak biletów od {d}. Przerywam skanowanie trasy."
+            )
             break
 
         time.sleep(0.3)
@@ -345,23 +372,27 @@ def check_route(route_label: str, from_id: str, to_id: str, dates_list: list):
 
 
 def main():
-    print("=== MONITORING NEOBUS (CENY + WOLNE MIEJSCA) ===")
+    print("=== MONITORING NEOBUS (CENY + SONDOWANIE DOSTĘPNOŚCI MIEJSC) ===")
     dates = generate_dynamic_dates(DAYS_FORWARD_SEARCH)
 
-    # 1. Sprawdzanie i zapis: Gliwice -> Domaradz
+    # 1. Trasa: Gliwice -> Domaradz
     courses_gli_dom = check_route(
         "Gliwice -> Domaradz",
         STOPS["gliwice"]["id"],
+        STOPS["gliwice"]["name"],
         STOPS["domaradz"]["id"],
+        STOPS["domaradz"]["name"],
         dates,
     )
     save_route_to_csv(courses_gli_dom, CSV_GLIWICE_DOMARADZ)
 
-    # 2. Sprawdzanie i zapis: Domaradz -> Gliwice
+    # 2. Trasa: Domaradz -> Gliwice
     courses_dom_gli = check_route(
         "Domaradz -> Gliwice",
         STOPS["domaradz"]["id"],
+        STOPS["domaradz"]["name"],
         STOPS["gliwice"]["id"],
+        STOPS["gliwice"]["name"],
         dates,
     )
     save_route_to_csv(courses_dom_gli, CSV_DOMARADZ_GLIWICE)
@@ -372,7 +403,7 @@ def main():
     )
     check_and_notify_new_schedule(all_active_dates)
 
-    # 4. Filtrowanie biletów promocyjnych na Twoje terminy
+    # 4. Filtrowanie okazji TYLKO na Twoje wybrane dni wyjazdu
     my_cheap_tickets = []
 
     for c in courses_gli_dom:
@@ -389,12 +420,25 @@ def main():
         ):
             my_cheap_tickets.append(c)
 
-    # 5. Wysłanie alertu na Discord
+    # 5. Gdy znaleziono tanie bilety — badamy dostępność foteli i wysyłamy alert
     if my_cheap_tickets:
-        print(f"🚨 Znaleziono {len(my_cheap_tickets)} tanich biletów na Twoje terminy!")
+        print(
+            f"🚨 Znaleziono {len(my_cheap_tickets)} tanich biletów! Badam dostępność miejsc..."
+        )
+        for ticket in my_cheap_tickets:
+            ticket["seat_info"] = probe_seat_availability(
+                ticket["from_id"],
+                ticket["from_name"],
+                ticket["to_id"],
+                ticket["to_name"],
+                ticket["date"],
+                ticket["hours"],
+            )
         send_discord_alert(my_cheap_tickets)
     else:
-        print(f"[i] Brak tanich biletów (<= {TARGET_MAX_PRICE:.2f} PLN) na Twoje zaplanowane wyjazdy.")
+        print(
+            f"[i] Brak tanich biletów (<= {TARGET_MAX_PRICE:.2f} PLN) na Twoje zaplanowane wyjazdy."
+        )
 
 
 if __name__ == "__main__":
