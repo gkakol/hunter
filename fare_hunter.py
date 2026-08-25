@@ -390,7 +390,7 @@ def check_route(
 
 def main():
   start_t = time.time()
-  print("=== SZYBKI MONITORING NEOBUS (KEEP-ALIVE + MIEJSCA) ===")
+  print("=== MONITORING NEOBUS (CENY + PEŁNY STAN MIEJSC NA TWOJE DNI) ===")
   init_session()
 
   dates = generate_dynamic_dates(DAYS_FORWARD_SEARCH)
@@ -421,17 +421,12 @@ def main():
   )
   check_and_notify_new_schedule(all_active_dates)
 
-  # 4. Badanie miejsc TYLKO dla okazji na Twoje wybrane daty
+  # 4. Badanie dokładnej liczby foteli dla WSZYSTKICH Twoich terminów wyjazdów
   my_cheap_tickets = []
 
+  print("🔍 Sprawdzam dokładną liczbę wolnych miejsc na Twoje wyjazdy...")
   for c in courses_gli_dom:
-    if (
-        0 < c["price"] <= TARGET_MAX_PRICE
-        and c["date"] in MY_TRIP_DATES_GLIWICE_DOMARADZ
-    ):
-      print(
-          f"🔍 Badam miejsca: Gliwice->Domaradz ({c['date']} {c['hours']})..."
-      )
+    if c["date"] in MY_TRIP_DATES_GLIWICE_DOMARADZ:
       c["seats"] = get_exact_seat_count(
           c["from_id"],
           c["from_name"],
@@ -440,16 +435,11 @@ def main():
           c["date"],
           c["hours"],
       )
-      my_cheap_tickets.append(c)
+      if 0 < c["price"] <= TARGET_MAX_PRICE:
+        my_cheap_tickets.append(c)
 
   for c in courses_dom_gli:
-    if (
-        0 < c["price"] <= TARGET_MAX_PRICE
-        and c["date"] in MY_TRIP_DATES_DOMARADZ_GLIWICE
-    ):
-      print(
-          f"🔍 Badam miejsca: Domaradz->Gliwice ({c['date']} {c['hours']})..."
-      )
+    if c["date"] in MY_TRIP_DATES_DOMARADZ_GLIWICE:
       c["seats"] = get_exact_seat_count(
           c["from_id"],
           c["from_name"],
@@ -458,20 +448,21 @@ def main():
           c["date"],
           c["hours"],
       )
-      my_cheap_tickets.append(c)
+      if 0 < c["price"] <= TARGET_MAX_PRICE:
+        my_cheap_tickets.append(c)
 
-  # 5. Zapis do CSV
+  # 5. Zapis do plików CSV (Twoje daty będą miały realne liczby miejsc)
   save_route_to_csv(courses_gli_dom, CSV_GLIWICE_DOMARADZ)
   save_route_to_csv(courses_dom_gli, CSV_DOMARADZ_GLIWICE)
 
-  # 6. Wysłanie powiadomień
+  # 6. Wysłanie powiadomień na Discord (tylko gdy cena <= TARGET_MAX_PRICE)
   if my_cheap_tickets:
     print(f"🚨 Znaleziono {len(my_cheap_tickets)} tanich biletów!")
     send_discord_alert(my_cheap_tickets)
   else:
     print(
-      f"[i] Brak tanich biletów (<= {TARGET_MAX_PRICE:.2f} PLN) na Twoje"
-      " terminy."
+        f"[i] Brak tanich biletów (<= {TARGET_MAX_PRICE:.2f} PLN) na Twoje"
+        " terminy."
     )
 
   total_time = time.time() - start_t
