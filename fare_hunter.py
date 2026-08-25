@@ -95,7 +95,7 @@ def generate_dynamic_dates(days_count: int) -> list:
 
 
 def save_route_to_csv(courses_list: list, csv_filename: str):
-  """Zapisuje kursy do dedykowanego pliku CSV."""
+  """Zapisuje kursy do pliku CSV z obsługą cen i liczby wolnych miejsc."""
   if not courses_list:
     return
 
@@ -110,12 +110,12 @@ def save_route_to_csv(courses_list: list, csv_filename: str):
           key = (row.get("Data kursu"), row.get("Godzina kursu"))
           try:
             price = float(row.get("Cena (PLN)", 0))
-            seats = row.get("Wolne miejsca", "B/D")
-            last_records[key] = (price, seats)
+            seats = row.get("Wolne miejsca") or "B/D"
+            last_records[key] = (price, str(seats).strip())
           except (ValueError, TypeError):
             pass
     except Exception as e:
-      print(f"[!] Błąd odczytu {csv_filename}: {e}")
+      print(f"[!] Ostrzeżenie przy odczycie {csv_filename}: {e}")
 
   timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
   records_to_add = []
@@ -123,12 +123,13 @@ def save_route_to_csv(courses_list: list, csv_filename: str):
   for c in courses_list:
     key = (c["date"], c["hours"])
     prev = last_records.get(key)
-    curr_seats_str = str(c.get("seats", "B/D"))
+    curr_seats_str = str(c.get("seats", "B/D")).strip()
 
     is_new = prev is None
     price_changed = prev and abs(c["price"] - prev[0]) > 0.01
+    # Zapisujemy zmianę miejsc tylko gdy mamy konkretną liczbę (różną od B/D)
     seats_changed = (
-        prev and str(prev[1]) != curr_seats_str and curr_seats_str != "B/D"
+        prev and prev[1] != curr_seats_str and curr_seats_str != "B/D"
     )
 
     if is_new or price_changed or seats_changed:
