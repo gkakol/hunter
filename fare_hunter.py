@@ -211,9 +211,7 @@ def check_and_notify_new_schedule(active_dates: list):
 # =====================================================================
 
 
-def get_courses(
-    from_id: str, from_name: str, to_id: str, to_name: str, date_str: str
-):
+def get_courses(from_id: str, from_name: str, to_id: str, to_name: str, date_str: str):
     session = requests.Session()
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
@@ -239,9 +237,7 @@ def get_courses(
             "initial_stop_name": from_name,
             "final_stop_name": to_name,
         }
-        resp = session.post(
-            "https://neobus.pl/", data=payload, headers=headers, timeout=15
-        )
+        resp = session.post("https://neobus.pl/", data=payload, headers=headers, timeout=15)
         raw = resp.json() if resp.status_code == 200 else {}
     except Exception:
         return []
@@ -249,12 +245,11 @@ def get_courses(
     content = raw.get("neotickets", raw) if isinstance(raw, dict) else raw
     data = json.loads(content) if isinstance(content, str) else content
 
+    # Szukanie liczby wolnych miejsc w surowej zawartości HTML modułu
+    html_text = str(raw)
+
     courses = []
-    if (
-        isinstance(data, dict)
-        and "ga4_data" in data
-        and len(data["ga4_data"]) > 0
-    ):
+    if isinstance(data, dict) and "ga4_data" in data and len(data["ga4_data"]) > 0:
         for it in data["ga4_data"][0].get("items", []):
             name = it.get("item_name", "")
             price = it.get("price") or it.get("discount", 0.0)
@@ -263,16 +258,23 @@ def get_courses(
             except Exception:
                 price = 0.0
 
-            match = re.search(
-                r"(\d{2}-\d{2})\s*-\s*(\d{2}:\d{2}|\d{2}-\d{2})", name
-            )
+            match_hours = re.search(r"(\d{2}-\d{2})\s*-\s*(\d{2}:\d{2}|\d{2}-\d{2})", name)
             hours_str = (
-                f"{match.group(1).replace('-', ':')} -> {match.group(2).replace('-', ':')}"
-                if match
+                f"{match_hours.group(1).replace('-', ':')} -> {match_hours.group(2).replace('-', ':')}"
+                if match_hours
                 else "Standardowy"
             )
+
+            # Szukanie wolnych foteli dla danego kursu w atrybutach (np. "Wolnych miejsc: 14" lub data-seats="14")
+            seats_match = re.search(r"(?:wolnych|miejsc|seats)[^\d]*(\d+)", html_text, re.IGNORECASE)
+            seats_count = int(seats_match.group(1)) if seats_match else "B/D"
+
             if price > 0:
-                courses.append({"hours": hours_str, "price": price})
+                courses.append({
+                    "hours": hours_str,
+                    "price": price,
+                    "seats": seats_count
+                })
     return courses
 
 
