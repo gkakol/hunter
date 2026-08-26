@@ -242,11 +242,14 @@ def generate_markdown_readme(courses_gli_dom: list, courses_dom_gli: list):
       )
 
   md.extend([
-      "\n## 📍 Twoje obserwowane powroty (Domaradz ➔ Gliwice)\n\n",
-      "| Data | Godzina odjazdu | Wolne miejsca | Cena | Zakup |\n",
-      "| :--- | :--- | :--- | :--- | :---: |\n",
-  ])
-
+        "\n---\n\n",
+        "## 📊 Kalendarz Obłożenia Miejsc (Wszystkie dni i godziny)\n\n",
+        "> *Im ciemniejszy czerwony kolor, tym mniej miejsc zostało w autokarze (ostatnie bilety).*\n\n",
+        "### 🚌 Trasa: Gliwice ➔ Domaradz\n",
+        "![Heatmapa Gliwice -> Domaradz](heatmapa_gliwice_domaradz.png)\n\n",
+        "### 🚌 Trasa: Domaradz ➔ Gliwice\n",
+        "![Heatmapa Domaradz -> Gliwice](heatmapa_domaradz_gliwice.png)\n",
+    ])
   for c in courses_dom_gli:
     if c["date"] in MY_TRIP_DATES_DOMARADZ_GLIWICE:
       seats_val = c.get("seats", "B/D")
