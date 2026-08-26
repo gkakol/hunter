@@ -1,8 +1,11 @@
-# 🚌 Neobus Sentinel & Fare Hunter
-> **Ostatnia aktualizacja:** `26.08.2026 17:21:34`  
-> 🟢 **Dużo miejsc (26-50)** | 🟡 **Średnie obłożenie (6-25)** | 🔴 **Ostatnie miejsca (1-5)**
-## 📍 Trasa: Gliwice ➔ Domaradz (Wyjazdy)
-| Data | Godzina odjazdu | Wolne miejsca | Cena | Link |
+# 🚌 Neobus Sentinel & Obserwatorium Podróży
+
+> 🕒 **Ostatnia aktualizacja:** `26.08.2026 19:20:47`  
+> 🟢 **Dużo miejsc (26–50)** | 🟡 **Średnie obłożenie (6–25)** | 🔴 **Ostatnie miejsca (1–5)**
+
+## 📍 Twoje obserwowane wyjazdy (Gliwice ➔ Domaradz)
+
+| Data | Godzina odjazdu | Wolne miejsca | Cena | Zakup |
 | :--- | :--- | :--- | :--- | :---: |
 | 📅 **11.09.2026** | ⏰ 00:20 -> 05:24 | 🟢 `[████████░░] 41/50` | 100.00 PLN | [Kup bilet](https://neobus.pl/) |
 | 📅 **11.09.2026** | ⏰ 09:45 -> 14:56 | 🟢 `[██████████] 49/50` | 100.00 PLN | [Kup bilet](https://neobus.pl/) |
@@ -57,15 +60,16 @@
 | 📅 **20.11.2026** | ⏰ 14:00 -> 19:26 | 🟢 `[██████████] 50/50` | 100.00 PLN | [Kup bilet](https://neobus.pl/) |
 | 📅 **20.11.2026** | ⏰ 17:40 -> 22:48 | 🟢 `[██████████] 50/50` | 100.00 PLN | [Kup bilet](https://neobus.pl/) |
 
-## 📍 Trasa: Domaradz ➔ Gliwice (Powroty)
-| Data | Godzina odjazdu | Wolne miejsca | Cena | Link |
+## 📍 Twoje obserwowane powroty (Domaradz ➔ Gliwice)
+
+| Data | Godzina odjazdu | Wolne miejsca | Cena | Zakup |
 | :--- | :--- | :--- | :--- | :---: |
 | 📅 **13.09.2026** | ⏰ 00:38 -> 05:22 | 🟢 `[█████████░] 45/50` | 95.00 PLN | [Kup bilet](https://neobus.pl/) |
 | 📅 **13.09.2026** | ⏰ 03:48 -> 09:00 | 🟢 `[█████████░] 46/50` | 95.00 PLN | [Kup bilet](https://neobus.pl/) |
 | 📅 **13.09.2026** | ⏰ 07:21 -> 13:00 | 🟢 `[██████████] 49/50` | 95.00 PLN | [Kup bilet](https://neobus.pl/) |
 | 📅 **13.09.2026** | ⏰ 11:08 -> 16:55 | 🟢 `[██████████] 49/50` | 95.00 PLN | [Kup bilet](https://neobus.pl/) |
 | 📅 **13.09.2026** | ⏰ 17:18 -> 22:27 | 🟢 `[██████████] 50/50` | 95.00 PLN | [Kup bilet](https://neobus.pl/) |
-| 📅 **20.09.2026** | ⏰ 00:38 -> 05:22 | 🟢 `[█████████░] 46/50` | 95.00 PLN | [Kup bilet](https://neobus.pl/) |
+| 📅 **20.09.2026** | ⏰ 00:38 -> 05:22 | 🟢 `[█████████░] 45/50` | 95.00 PLN | [Kup bilet](https://neobus.pl/) |
 | 📅 **20.09.2026** | ⏰ 03:48 -> 09:00 | 🟢 `[██████████] 50/50` | 95.00 PLN | [Kup bilet](https://neobus.pl/) |
 | 📅 **20.09.2026** | ⏰ 07:21 -> 13:00 | 🟢 `[██████████] 50/50` | 95.00 PLN | [Kup bilet](https://neobus.pl/) |
 | 📅 **20.09.2026** | ⏰ 11:08 -> 16:55 | 🟢 `[██████████] 50/50` | 95.00 PLN | [Kup bilet](https://neobus.pl/) |
@@ -114,3 +118,39 @@
 | 📅 **22.11.2026** | ⏰ 07:21 -> 13:00 | 🟢 `[██████████] 50/50` | 95.00 PLN | [Kup bilet](https://neobus.pl/) |
 | 📅 **22.11.2026** | ⏰ 11:08 -> 16:55 | 🟢 `[██████████] 50/50` | 95.00 PLN | [Kup bilet](https://neobus.pl/) |
 | 📅 **22.11.2026** | ⏰ 17:18 -> 22:27 | 🟢 `[██████████] 50/50` | 95.00 PLN | [Kup bilet](https://neobus.pl/) |
+
+---
+
+## ⚡ Ostatnie zarejestrowane zmiany cen i stanu miejsc
+
+> *Wiersze poniżej reprezentują faktycznie odnotowane zmiany w bazie Neobusa.*
+
+| Czas sprawdzenia | Trasa | Kurs | Cena | Zarejestrowane miejsca |
+| :--- | :--- | :--- | :--- | :---: |
+| `2026-08-26 19:20:47` | Gliwice ➔ Domaradz | 📅 24.10.2026 (00:20 -> 05:24) | **100.00 PLN** | 🟢 **49 szt.** |
+| `2026-08-26 19:20:47` | Gliwice ➔ Domaradz | 📅 18.09.2026 (00:20 -> 05:24) | **100.00 PLN** | 🟢 **48 szt.** |
+| `2026-08-26 19:20:47` | Gliwice ➔ Domaradz | 📅 12.09.2026 (17:40 -> 22:48) | **100.00 PLN** | 🟢 **47 szt.** |
+| `2026-08-26 19:20:47` | Gliwice ➔ Domaradz | 📅 12.09.2026 (14:00 -> 19:26) | **100.00 PLN** | 🟢 **46 szt.** |
+| `2026-08-26 19:20:47` | Gliwice ➔ Domaradz | 📅 07.09.2026 (00:20 -> 05:24) | **100.00 PLN** | 🟢 **32 szt.** |
+| `2026-08-26 19:20:47` | Gliwice ➔ Domaradz | 📅 04.09.2026 (09:45 -> 14:56) | **100.00 PLN** | 🟢 **46 szt.** |
+| `2026-08-26 19:20:47` | Domaradz ➔ Gliwice | 📅 07.11.2026 (11:08 -> 16:55) | **95.00 PLN** | 🟢 **49 szt.** |
+| `2026-08-26 19:20:47` | Domaradz ➔ Gliwice | 📅 23.09.2026 (11:08 -> 16:55) | **95.00 PLN** | 🟢 **46 szt.** |
+| `2026-08-26 19:20:47` | Domaradz ➔ Gliwice | 📅 20.09.2026 (00:38 -> 05:22) | **95.00 PLN** | 🟢 **45 szt.** |
+| `2026-08-26 19:20:47` | Domaradz ➔ Gliwice | 📅 17.09.2026 (00:38 -> 05:22) | **95.00 PLN** | 🟢 **45 szt.** |
+
+---
+
+## 🚨 Radar Obłożenia: Najbardziej oblegane kursy w całym kalendarzu (TOP 10)
+
+| Trasa | Data i godzina | Wolne miejsca | Obłożenie | Cena |
+| :--- | :--- | :--- | :--- | :---: |
+| Domaradz -> Gliwice | 📅 **29.08.2026** (00:38 -> 05:22) | 🟡 `[████░░░░░░] 19/50` | **62% zajęte** | 95.00 PLN |
+| Domaradz -> Gliwice | 📅 **28.08.2026** (00:38 -> 05:22) | 🟡 `[████░░░░░░] 21/50` | **57% zajęte** | 95.00 PLN |
+| Domaradz -> Gliwice | 📅 **01.09.2026** (11:08 -> 16:55) | 🟡 `[████░░░░░░] 22/50` | **56% zajęte** | 95.00 PLN |
+| Domaradz -> Gliwice | 📅 **01.09.2026** (00:38 -> 05:22) | 🟡 `[█████░░░░░] 23/50` | **54% zajęte** | 95.00 PLN |
+| Gliwice -> Domaradz | 📅 **16.09.2026** (00:20 -> 05:24) | 🟡 `[█████░░░░░] 25/50` | **50% zajęte** | 100.00 PLN |
+| Gliwice -> Domaradz | 📅 **05.09.2026** (00:20 -> 05:24) | 🟢 `[█████░░░░░] 26/50` | **48% zajęte** | 100.00 PLN |
+| Domaradz -> Gliwice | 📅 **02.09.2026** (00:38 -> 05:22) | 🟢 `[█████░░░░░] 26/50` | **48% zajęte** | 95.00 PLN |
+| Gliwice -> Domaradz | 📅 **27.08.2026** (00:20 -> 05:24) | 🟢 `[█████░░░░░] 27/50` | **46% zajęte** | 100.00 PLN |
+| Domaradz -> Gliwice | 📅 **04.09.2026** (11:08 -> 16:55) | 🟢 `[██████░░░░] 28/50` | **44% zajęte** | 95.00 PLN |
+| Domaradz -> Gliwice | 📅 **27.08.2026** (07:21 -> 13:00) | 🟢 `[██████░░░░] 29/50` | **42% zajęte** | 95.00 PLN |
