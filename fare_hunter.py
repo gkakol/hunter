@@ -26,7 +26,7 @@ MY_TRIP_DATES_DOMARADZ_GLIWICE = [
 TARGET_MAX_PRICE = 60.00
 TICKET_TYPE = "normal"
 DAYS_FORWARD_SEARCH = 120
-MAX_WORKERS = 4  # Bezpieczna liczba równoległych wątków
+MAX_WORKERS = 8
 
 CSV_GLIWICE_DOMARADZ = "ceny_gliwice_domaradz.csv"
 CSV_DOMARADZ_GLIWICE = "ceny_domaradz_gliwice.csv"
@@ -55,6 +55,23 @@ HEADERS = {
 def generate_dynamic_dates(days_count: int) -> list:
     today = date.today()
     return [(today + timedelta(days=i)).strftime("%d.%m.%Y") for i in range(days_count)]
+
+
+def load_known_seats(csv_filename: str) -> dict:
+    """Wczytuje ostatnio znany stan wolnych miejsc z CSV."""
+    known = {}
+    if os.path.isfile(csv_filename):
+        try:
+            with open(csv_filename, mode="r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    key = (row.get("Data kursu"), row.get("Godzina kursu"))
+                    val = row.get("Wolne miejsca", "").strip()
+                    if val.isdigit():
+                        known[key] = int(val)
+        except Exception:
+            pass
+    return known
 
 
 def save_route_to_csv(courses_list: list, csv_filename: str):
@@ -188,7 +205,7 @@ def check_and_notify_new_schedule(active_dates: list):
 
 
 # =====================================================================
-#                    ZAPYTANIA API I PROBING
+#                    ZAPYTANIA API I FAST PROBING
 # =====================================================================
 
 def query_neobus(session: requests.Session, from_id: str, from_name: str, to_id: str, to_name: str, date_str: str, passengers: int = 1):
@@ -207,7 +224,7 @@ def query_neobus(session: requests.Session, from_id: str, from_name: str, to_id:
         "final_stop_name": to_name,
     }
     try:
-        resp = session.post("https://neobus.pl/", data=payload, headers=HEADERS, timeout=10)
+        resp = session.post("https://neobus.pl/", data=payload, headers=HEADERS, timeout=8)
         raw = resp.json() if resp.status_code == 200 else {}
     except Exception:
         return []
@@ -237,46 +254,55 @@ def query_neobus(session: requests.Session, from_id: str, from_name: str, to_id:
     return courses
 
 
-def get_exact_seat_count(from_id: str, from_name: str, to_id: str, to_name: str, date_str: str, target_hours: str) -> int:
-    """Używa dedykowanej sesji i binary search w bezpiecznym zakresie 1-50."""
+def get_fast_seat_count(from_id: str, from_name: str, to_id: str, to_name: str, date_str: str, target_hours: str, known_seats: int = None) -> int:
+    """Błyskawiczne sprawdzanie miejsc (Delta Check)."""
     session = requests.Session()
-    session.get("https://neobus.pl/", headers=HEADERS, timeout=8)
+
+    # Szybki test: czy liczba miejsc się NIE zmieniła? (1 zapytanie)
+    if known_seats and 1 <= known_seats <= 50:
+        res = query_neobus(session, from_id, from_name, to_id, to_name, date_str, passengers=known_seats)
+        if any(c["hours"] == target_hours for c in res):
+            # Miejsc jest co najmniej tyle samo — sprawdzamy czy nie doszły nowe zwroty
+            if known_seats == 50:
+                return 50
+            res_plus = query_neobus(session, from_id, from_name, to_id, to_name, date_str, passengers=known_seats + 1)
+            if not any(c["hours"] == target_hours for c in res_plus):
+                return known_seats  # Liczba miejsc w 100% bez zmian!
+        high = known_seats
+    else:
+        high = 50
 
     low = 1
-    high = 50
     exact_seats = 1
 
     while low <= high:
         mid = (low + high) // 2
         res = query_neobus(session, from_id, from_name, to_id, to_name, date_str, passengers=mid)
-        match = [c for c in res if c["hours"] == target_hours]
-
-        if match:
+        if any(c["hours"] == target_hours for c in res):
             exact_seats = mid
             low = mid + 1
         else:
             high = mid - 1
-        time.sleep(0.05)
 
     return exact_seats
 
 
 def enrich_course_with_seats(course: dict) -> dict:
-    course["seats"] = get_exact_seat_count(
+    course["seats"] = get_fast_seat_count(
         course["from_id"],
         course["from_name"],
         course["to_id"],
         course["to_name"],
         course["date"],
-        course["hours"]
+        course["hours"],
+        course.get("known_seats")
     )
     return course
 
 
-def check_route_base(route_label: str, from_id: str, from_name: str, to_id: str, to_name: str, dates_list: list):
+def check_route_base(route_label: str, from_id: str, from_name: str, to_id: str, to_name: str, dates_list: list, known_dict: dict):
     print(f"🚌 Skanuję siatkę połączeń: {route_label}...")
     session = requests.Session()
-    session.get("https://neobus.pl/", headers=HEADERS, timeout=8)
     
     courses = []
     empty_days = 0
@@ -286,6 +312,7 @@ def check_route_base(route_label: str, from_id: str, from_name: str, to_id: str,
         if found:
             empty_days = 0
             for c in found:
+                k_seats = known_dict.get((d, c["hours"]))
                 courses.append({
                     "route": route_label,
                     "date": d,
@@ -295,6 +322,7 @@ def check_route_base(route_label: str, from_id: str, from_name: str, to_id: str,
                     "from_name": from_name,
                     "to_id": to_id,
                     "to_name": to_name,
+                    "known_seats": k_seats,
                     "seats": "B/D"
                 })
         else:
@@ -303,7 +331,6 @@ def check_route_base(route_label: str, from_id: str, from_name: str, to_id: str,
         if empty_days >= 6:
             print(f"🛑 [Koniec puli] Brak biletów od {d}. Koniec trasy.")
             break
-        time.sleep(0.04)
 
     return courses
 
@@ -314,27 +341,16 @@ def check_route_base(route_label: str, from_id: str, from_name: str, to_id: str,
 
 def main():
     start_t = time.time()
-    print("=== MONITORING NEOBUS (PEŁNE PRECYZYJNE BADANIE MIEJSC) ===")
+    print("=== SZYBKI MONITORING NEOBUS (DELTA CHECK 100% MIEJSC) ===")
 
     dates = generate_dynamic_dates(DAYS_FORWARD_SEARCH)
 
-    # 1. Pobieranie podstawowej siatki kursów
-    courses_gli_dom = check_route_base(
-        "Gliwice -> Domaradz",
-        STOPS["gliwice"]["id"],
-        STOPS["gliwice"]["name"],
-        STOPS["domaradz"]["id"],
-        STOPS["domaradz"]["name"],
-        dates
-    )
-    courses_dom_gli = check_route_base(
-        "Domaradz -> Gliwice",
-        STOPS["domaradz"]["id"],
-        STOPS["domaradz"]["name"],
-        STOPS["gliwice"]["id"],
-        STOPS["gliwice"]["name"],
-        dates
-    )
+    known_gli_dom = load_known_seats(CSV_GLIWICE_DOMARADZ)
+    known_dom_gli = load_known_seats(CSV_DOMARADZ_GLIWICE)
+
+    # 1. Pobieranie siatki połączeń
+    courses_gli_dom = check_route_base("Gliwice -> Domaradz", STOPS["gliwice"]["id"], STOPS["gliwice"]["name"], STOPS["domaradz"]["id"], STOPS["domaradz"]["name"], dates, known_gli_dom)
+    courses_dom_gli = check_route_base("Domaradz -> Gliwice", STOPS["domaradz"]["id"], STOPS["domaradz"]["name"], STOPS["gliwice"]["id"], STOPS["gliwice"]["name"], dates, known_dom_gli)
 
     # 2. Powiadomienie o nowej puli
     all_active_dates = list({c["date"] for c in (courses_gli_dom + courses_dom_gli)})
@@ -342,16 +358,16 @@ def main():
 
     all_courses = courses_gli_dom + courses_dom_gli
     total_count = len(all_courses)
-    print(f"🚀 Rozpoczynam precyzyjne badanie miejsc dla {total_count} kursów ({MAX_WORKERS} niezależne wątki)...")
+    print(f"🚀 Szybkie badanie miejsc metodą Delta Check dla {total_count} kursów ({MAX_WORKERS} wątków)...")
 
-    # 3. Badanie liczby wolnych foteli z osobnymi sesjami dla każdego wątku
+    # 3. Równoległe badanie miejsc
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = [executor.submit(enrich_course_with_seats, course) for course in all_courses]
         done = 0
         for _ in as_completed(futures):
             done += 1
-            if done % 20 == 0 or done == total_count:
-                print(f"   ⏳ Zbadano {done}/{total_count} kursów...")
+            if done % 50 == 0 or done == total_count:
+                print(f"   ⏳ Zweryfikowano {done}/{total_count} kursów...")
 
     # 4. Zapis do plików CSV
     save_route_to_csv(courses_gli_dom, CSV_GLIWICE_DOMARADZ)
