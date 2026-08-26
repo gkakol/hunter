@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import csv
 from datetime import date, timedelta
 import json
@@ -10,7 +11,6 @@ import requests
 #                        KONFIGURACJA
 # =====================================================================
 
-# 1. DNI, NA KTÓRE CHCESZ OTRZYMAĆ POWIADOMIENIE NA DISCORDZIE
 MY_TRIP_DATES_GLIWICE_DOMARADZ = [
     "11.09.2026",
     "16.09.2026",
@@ -41,9 +41,10 @@ MY_TRIP_DATES_DOMARADZ_GLIWICE = [
     "22.11.2026",
 ]
 
-TARGET_MAX_PRICE = 60.00  # Próg promocyjny (PLN)
-TICKET_TYPE = "normal"  # 'student' lub 'normal'
-DAYS_FORWARD_SEARCH = 120  # Sprawdzany zakres w przód
+TARGET_MAX_PRICE = 60.00
+TICKET_TYPE = "normal"
+DAYS_FORWARD_SEARCH = 120
+MAX_WORKERS = 8  # Bezpieczna liczba wątków (błyskawiczne działanie bez przeciążania serwera)
 
 CSV_GLIWICE_DOMARADZ = "ceny_gliwice_domaradz.csv"
 CSV_DOMARADZ_GLIWICE = "ceny_domaradz_gliwice.csv"
@@ -58,8 +59,12 @@ STOPS = {
     "domaradz": {"id": "47", "name": "DOMARADZ "},
 }
 
-# Globalna sesja Keep-Alive
+# Konfiguracja sesji z dużą pulą połączeń
 SESSION = requests.Session()
+adapter = requests.adapters.HTTPAdapter(
+    pool_connections=MAX_WORKERS * 2, pool_maxsize=MAX_WORKERS * 2
+)
+SESSION.mount("https://", adapter)
 SESSION.headers.update({
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
@@ -74,7 +79,6 @@ SESSION.headers.update({
 
 
 def init_session():
-  """Inicjalizuje sesję tylko 1 raz na początku działania programu."""
   try:
     SESSION.get("https://neobus.pl/", timeout=10)
   except Exception as e:
@@ -95,7 +99,6 @@ def generate_dynamic_dates(days_count: int) -> list:
 
 
 def save_route_to_csv(courses_list: list, csv_filename: str):
-  """Zapisuje kursy do pliku CSV z obsługą cen i liczby wolnych miejsc."""
   if not courses_list:
     return
 
@@ -127,10 +130,7 @@ def save_route_to_csv(courses_list: list, csv_filename: str):
 
     is_new = prev is None
     price_changed = prev and abs(c["price"] - prev[0]) > 0.01
-    # Zapisujemy zmianę miejsc tylko gdy mamy konkretną liczbę (różną od B/D)
-    seats_changed = (
-        prev and prev[1] != curr_seats_str and curr_seats_str != "B/D"
-    )
+    seats_changed = prev and prev[1] != curr_seats_str
 
     if is_new or price_changed or seats_changed:
       records_to_add.append([
@@ -179,7 +179,6 @@ def send_discord_message(content: str):
 
 
 def send_discord_alert(cheap_tickets: list):
-  """Wysyła alert o tanich biletach z dokładną liczbą wolnych miejsc."""
   if not DISCORD_WEBHOOK_URL or not cheap_tickets:
     return
 
@@ -222,7 +221,6 @@ def send_discord_alert(cheap_tickets: list):
 
 
 def check_and_notify_new_schedule(active_dates: list):
-  """Wysyła powiadomienie o nowej puli miesięcy."""
   if not active_dates:
     return
 
@@ -251,7 +249,7 @@ def check_and_notify_new_schedule(active_dates: list):
 
 
 # =====================================================================
-#                        SZYBKIE ZAPYTANIA API
+#                    ZAPYTANIA API I PARALLELISM
 # =====================================================================
 
 
@@ -263,7 +261,6 @@ def fetch_neobus_courses(
     date_str: str,
     passengers: int = 1,
 ):
-  """Błyskawiczne zapytanie dzięki Keep-Alive."""
   payload = {
       "ajax": "true",
       "dataType": "json",
@@ -320,13 +317,12 @@ def get_exact_seat_count(
     date_str: str,
     target_hours: str,
 ) -> int:
-  """Szybkie binary search na otwartej sesji."""
+  """Binary search (1-65 foteli)."""
   low, high = 1, 65
   exact_seats = 1
 
   while low <= high:
     mid = (low + high) // 2
-    time.sleep(0.05)
     res = fetch_neobus_courses(
         from_id, from_name, to_id, to_name, date_str, passengers=mid
     )
@@ -341,7 +337,20 @@ def get_exact_seat_count(
   return exact_seats
 
 
-def check_route(
+def enrich_course_with_seats(course: dict) -> dict:
+  """Funkcja wątkowa badająca pojedynczy kurs."""
+  course["seats"] = get_exact_seat_count(
+      course["from_id"],
+      course["from_name"],
+      course["to_id"],
+      course["to_name"],
+      course["date"],
+      course["hours"],
+  )
+  return course
+
+
+def check_route_base(
     route_label: str,
     from_id: str,
     from_name: str,
@@ -349,7 +358,7 @@ def check_route(
     to_name: str,
     dates_list: list,
 ):
-  print(f"🚌 Skanuję trasę: {route_label}...")
+  print(f"🚌 Skanuję siatkę połączeń: {route_label}...")
   courses = []
   empty_days = 0
 
@@ -378,8 +387,6 @@ def check_route(
       print(f"🛑 [Koniec puli] Brak biletów od {d}. Koniec trasy.")
       break
 
-    time.sleep(0.08)
-
   return courses
 
 
@@ -390,13 +397,13 @@ def check_route(
 
 def main():
   start_t = time.time()
-  print("=== MONITORING NEOBUS (CENY + PEŁNY STAN MIEJSC NA TWOJE DNI) ===")
+  print("=== MONITORING NEOBUS (PEŁNE BADANIE 100% WOLNYCH MIEJSC) ===")
   init_session()
 
   dates = generate_dynamic_dates(DAYS_FORWARD_SEARCH)
 
-  # 1. Trasa: Gliwice -> Domaradz
-  courses_gli_dom = check_route(
+  # 1. Pobieranie podstawowej siatki kursów
+  courses_gli_dom = check_route_base(
       "Gliwice -> Domaradz",
       STOPS["gliwice"]["id"],
       STOPS["gliwice"]["name"],
@@ -404,9 +411,7 @@ def main():
       STOPS["domaradz"]["name"],
       dates,
   )
-
-  # 2. Trasa: Domaradz -> Gliwice
-  courses_dom_gli = check_route(
+  courses_dom_gli = check_route_base(
       "Domaradz -> Gliwice",
       STOPS["domaradz"]["id"],
       STOPS["domaradz"]["name"],
@@ -415,47 +420,51 @@ def main():
       dates,
   )
 
-  # 3. Sprawdzenie nowej puli miesięcy
+  # 2. Powiadomienie o nowej puli
   all_active_dates = list(
       {c["date"] for c in (courses_gli_dom + courses_dom_gli)}
   )
   check_and_notify_new_schedule(all_active_dates)
 
-  # 4. Badanie dokładnej liczby foteli dla WSZYSTKICH Twoich terminów wyjazdów
-  my_cheap_tickets = []
+  all_courses = courses_gli_dom + courses_dom_gli
+  total_count = len(all_courses)
+  print(
+      f"🚀 Rozpoczynam równoległe badanie miejsc dla wszystkich {total_count}"
+      f" kursów ({MAX_WORKERS} wątków)..."
+  )
 
-  print("🔍 Sprawdzam dokładną liczbę wolnych miejsc na Twoje wyjazdy...")
-  for c in courses_gli_dom:
-    if c["date"] in MY_TRIP_DATES_GLIWICE_DOMARADZ:
-      c["seats"] = get_exact_seat_count(
-          c["from_id"],
-          c["from_name"],
-          c["to_id"],
-          c["to_name"],
-          c["date"],
-          c["hours"],
-      )
-      if 0 < c["price"] <= TARGET_MAX_PRICE:
-        my_cheap_tickets.append(c)
+  # 3. Równoległe badanie liczby wolnych miejsc
+  with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+    futures = [
+        executor.submit(enrich_course_with_seats, course)
+        for course in all_courses
+    ]
+    done = 0
+    for _ in as_completed(futures):
+      done += 1
+      if done % 25 == 0 or done == total_count:
+        print(f"   ⏳ Zbadano {done}/{total_count} kursów...")
 
-  for c in courses_dom_gli:
-    if c["date"] in MY_TRIP_DATES_DOMARADZ_GLIWICE:
-      c["seats"] = get_exact_seat_count(
-          c["from_id"],
-          c["from_name"],
-          c["to_id"],
-          c["to_name"],
-          c["date"],
-          c["hours"],
-      )
-      if 0 < c["price"] <= TARGET_MAX_PRICE:
-        my_cheap_tickets.append(c)
-
-  # 5. Zapis do plików CSV (Twoje daty będą miały realne liczby miejsc)
+  # 4. Zapis 100% zbadanych miejsc do plików CSV
   save_route_to_csv(courses_gli_dom, CSV_GLIWICE_DOMARADZ)
   save_route_to_csv(courses_dom_gli, CSV_DOMARADZ_GLIWICE)
 
-  # 6. Wysłanie powiadomień na Discord (tylko gdy cena <= TARGET_MAX_PRICE)
+  # 5. Filtrowanie okazji i powiadomienia Discord
+  my_cheap_tickets = []
+  for c in courses_gli_dom:
+    if (
+        0 < c["price"] <= TARGET_MAX_PRICE
+        and c["date"] in MY_TRIP_DATES_GLIWICE_DOMARADZ
+    ):
+      my_cheap_tickets.append(c)
+
+  for c in courses_dom_gli:
+    if (
+        0 < c["price"] <= TARGET_MAX_PRICE
+        and c["date"] in MY_TRIP_DATES_DOMARADZ_GLIWICE
+    ):
+      my_cheap_tickets.append(c)
+
   if my_cheap_tickets:
     print(f"🚨 Znaleziono {len(my_cheap_tickets)} tanich biletów!")
     send_discord_alert(my_cheap_tickets)
@@ -466,7 +475,9 @@ def main():
     )
 
   total_time = time.time() - start_t
-  print(f"⏱️ Całkowity czas wykonania: {total_time:.2f} s")
+  print(
+      f"⏱️ Zbadano 100% wolnych miejsc w całym kalendarzu w: {total_time:.2f} s"
+  )
 
 
 if __name__ == "__main__":
