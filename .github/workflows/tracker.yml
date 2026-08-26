@@ -1,43 +1,50 @@
-name: Neobus Ticket Hunter
+name: Neobus Fare Tracker & Chart Generator
 
 on:
   schedule:
-    - cron: '*/20 * * * *'
-  workflow_dispatch:
+    # Uruchamianie co 15 minut
+    - cron: '*/15 * * * *'
+  workflow_dispatch: # Możliwość ręcznego uruchomienia w zakładce Actions
+
+permissions:
+  contents: write
 
 jobs:
-  check-tickets:
+  track-and-visualize:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
-      - name: Pobierz kod repozytorium
+      - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Przygotuj środowisko Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
-      - name: Zainstaluj biblioteki
+      - name: Install dependencies
         run: |
-          pip install requests pandas matplotlib
+          python -m pip install --upgrade pip
+          pip install requests matplotlib pandas
 
-      - name: Uruchom bota
+      - name: Run Fare Hunter Bot
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
           python fare_hunter.py
 
-      - name: Wygeneruj wykresy
+      - name: Generate Price Charts
         run: |
           python generate_chart.py
 
-      - name: Zapisz stan w repozytorium
+      - name: Commit and Push Changes
         run: |
           git config --global user.name "Neobus Hunter Bot"
-          git config --global user.email "bot@neobushunter.local"
-          git add ceny_gliwice_domaradz.csv ceny_domaradz_gliwice.csv wykres_gliwice_domaradz.png wykres_domaradz_gliwice.png ostatnia_data_sprzedazy.txt
-          git commit -m "Aktualizacja cen i wykresów obu tras [skip ci]" || echo "Brak zmian do zapisu"
+          git config --global user.email "actions@github.com"
+          git add -A
+          git commit -m "Aktualizacja cen, miejsc i wykresów [skip ci]" || exit 0
+          git pull --rebase origin main
           git push
