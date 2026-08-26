@@ -1,5 +1,5 @@
 import csv
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 import json
 import os
 import re
@@ -31,6 +31,7 @@ MAX_WORKERS = 8
 CSV_GLIWICE_DOMARADZ = "ceny_gliwice_domaradz.csv"
 CSV_DOMARADZ_GLIWICE = "ceny_domaradz_gliwice.csv"
 LATEST_DATE_FILE = "ostatnia_data_sprzedazy.txt"
+README_FILE = "README.md"
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
 
 STOPS = {
@@ -58,7 +59,6 @@ def generate_dynamic_dates(days_count: int) -> list:
 
 
 def load_known_seats(csv_filename: str) -> dict:
-    """Wczytuje ostatnio znany stan wolnych miejsc z CSV."""
     known = {}
     if os.path.isfile(csv_filename):
         try:
@@ -129,6 +129,68 @@ def save_route_to_csv(courses_list: list, csv_filename: str):
 
 
 # =====================================================================
+#                 FORMATOWANIE WSKAŹNIKÓW I RAPORTU
+# =====================================================================
+
+def render_progress_bar(seats: int, total: int = 50) -> str:
+    if not isinstance(seats, int) or seats < 0:
+        return "B/D"
+    filled = max(0, min(10, int(round((seats / total) * 10))))
+    bar = "█" * filled + "░" * (10 - filled)
+    return f"[{bar}] {seats}/{total}"
+
+
+def get_status_badge(seats) -> str:
+    if isinstance(seats, int):
+        if seats <= 5:
+            return "🔴"
+        elif seats <= 25:
+            return "🟡"
+        return "🟢"
+    return "⚪"
+
+
+def generate_markdown_readme(courses_gli_dom: list, courses_dom_gli: list):
+    """Generuje interaktywną macierz obłożenia w pliku README.md."""
+    now_str = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+
+    md = [
+        "# 🚌 Neobus Sentinel & Fare Hunter\n",
+        f"> **Ostatnia aktualizacja:** `{now_str}`  \n",
+        "> 🟢 **Dużo miejsc (26-50)** | 🟡 **Średnie obłożenie (6-25)** | 🔴 **Ostatnie miejsca (1-5)**\n",
+        "## 📍 Trasa: Gliwice ➔ Domaradz (Wyjazdy)\n",
+        "| Data | Godzina odjazdu | Wolne miejsca | Cena | Link |\n",
+        "| :--- | :--- | :--- | :--- | :---: |\n"
+    ]
+
+    for c in courses_gli_dom:
+        if c["date"] in MY_TRIP_DATES_GLIWICE_DOMARADZ:
+            seats_val = c.get("seats", "B/D")
+            badge = get_status_badge(seats_val)
+            seats_bar = render_progress_bar(seats_val) if isinstance(seats_val, int) else "B/D"
+            price_tag = f"**{c['price']:.2f} PLN**" if c['price'] <= TARGET_MAX_PRICE else f"{c['price']:.2f} PLN"
+            md.append(f"| 📅 **{c['date']}** | ⏰ {c['hours']} | {badge} `{seats_bar}` | {price_tag} | [Kup bilet](https://neobus.pl/) |\n")
+
+    md.extend([
+        "\n## 📍 Trasa: Domaradz ➔ Gliwice (Powroty)\n",
+        "| Data | Godzina odjazdu | Wolne miejsca | Cena | Link |\n",
+        "| :--- | :--- | :--- | :--- | :---: |\n"
+    ])
+
+    for c in courses_dom_gli:
+        if c["date"] in MY_TRIP_DATES_DOMARADZ_GLIWICE:
+            seats_val = c.get("seats", "B/D")
+            badge = get_status_badge(seats_val)
+            seats_bar = render_progress_bar(seats_val) if isinstance(seats_val, int) else "B/D"
+            price_tag = f"**{c['price']:.2f} PLN**" if c['price'] <= TARGET_MAX_PRICE else f"{c['price']:.2f} PLN"
+            md.append(f"| 📅 **{c['date']}** | ⏰ {c['hours']} | {badge} `{seats_bar}` | {price_tag} | [Kup bilet](https://neobus.pl/) |\n")
+
+    with open(README_FILE, "w", encoding="utf-8") as f:
+        f.writelines(md)
+    print("📄 Wygenerowano zaktualizowany raport README.md.")
+
+
+# =====================================================================
 #                   POWIADOMIENIA DISCORD
 # =====================================================================
 
@@ -148,15 +210,19 @@ def send_discord_alert(cheap_tickets: list):
 
     count = len(cheap_tickets)
     header = f"🔥 **ZNALEZIONO TANIE BILETY NA TWOJE TERMINY ({count} szt.)!** @everyone\n"
-    
+
     blocks = []
     for t in cheap_tickets:
-        seats_str = f"{t.get('seats')} szt." if str(t.get('seats')).isdigit() else "Dostępne"
+        seats_val = t.get("seats")
+        seats_str = render_progress_bar(seats_val) if isinstance(seats_val, int) else "Dostępne"
+        badge = get_status_badge(seats_val)
+
         block = (
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"📍 **{t['route']}** | 📅 **{t['date']}**\n"
             f"⏰ Godzina: **{t['hours']}**\n"
-            f"💰 Cena: **{t['price']:.2f} PLN** | 💺 Wolne miejsca: **{seats_str}**\n"
+            f"💰 Cena: **{t['price']:.2f} PLN**\n"
+            f"💺 Miejsca: {badge} `{seats_str}`\n"
             f"🔗 **[👉 KLIKNIJ TUTAJ, ABY KUPIĆ BILET 👈](https://neobus.pl/)**\n"
         )
         blocks.append(block)
@@ -208,143 +274,87 @@ def check_and_notify_new_schedule(active_dates: list):
 #                    ZAPYTANIA API I FAST PROBING
 # =====================================================================
 
-def query_neobus(
-    session: requests.Session,
-    from_id: str,
-    from_name: str,
-    to_id: str,
-    to_name: str,
-    date_str: str,
-    passengers: int = 1,
-    retries: int = 3,
-):
-  """Wysyła zapytanie z automatycznym wznawianiem przy błędach sieciowych."""
-  payload = {
-      "ajax": "true",
-      "dataType": "json",
-      "module": "neotickets",
-      "step": "1",
-      "ticket_type": TICKET_TYPE,
-      "initial_stop": from_id,
-      "final_stop": to_id,
-      "passengers": str(passengers),
-      "date_there": date_str,
-      "date_return": "",
-      "initial_stop_name": from_name,
-      "final_stop_name": to_name,
-  }
+def query_neobus(session: requests.Session, from_id: str, from_name: str, to_id: str, to_name: str, date_str: str, passengers: int = 1, retries: int = 3):
+    payload = {
+        "ajax": "true",
+        "dataType": "json",
+        "module": "neotickets",
+        "step": "1",
+        "ticket_type": TICKET_TYPE,
+        "initial_stop": from_id,
+        "final_stop": to_id,
+        "passengers": str(passengers),
+        "date_there": date_str,
+        "date_return": "",
+        "initial_stop_name": from_name,
+        "final_stop_name": to_name,
+    }
+    for _ in range(retries):
+        try:
+            resp = session.post("https://neobus.pl/", data=payload, headers=HEADERS, timeout=12)
+            if resp.status_code == 200:
+                raw = resp.json()
+                content = raw.get("neotickets", raw) if isinstance(raw, dict) else raw
+                data = json.loads(content) if isinstance(content, str) else content
 
-  for attempt in range(retries):
-    try:
-      resp = session.post(
-          "https://neobus.pl/", data=payload, headers=HEADERS, timeout=12
-      )
-      if resp.status_code == 200:
-        raw = resp.json()
-        content = raw.get("neotickets", raw) if isinstance(raw, dict) else raw
-        data = json.loads(content) if isinstance(content, str) else content
+                courses = []
+                if isinstance(data, dict) and "ga4_data" in data and len(data["ga4_data"]) > 0:
+                    for it in data["ga4_data"][0].get("items", []):
+                        name = it.get("item_name", "")
+                        price = it.get("price") or it.get("discount", 0.0)
+                        try:
+                            price = float(price)
+                        except Exception:
+                            price = 0.0
 
-        courses = []
-        if (
-            isinstance(data, dict)
-            and "ga4_data" in data
-            and len(data["ga4_data"]) > 0
-        ):
-          for it in data["ga4_data"][0].get("items", []):
-            name = it.get("item_name", "")
-            price = it.get("price") or it.get("discount", 0.0)
-            try:
-              price = float(price)
-            except Exception:
-              price = 0.0
+                        match_hours = re.search(r"(\d{2}-\d{2})\s*-\s*(\d{2}:\d{2}|\d{2}-\d{2})", name)
+                        hours_str = (
+                            f"{match_hours.group(1).replace('-', ':')} -> {match_hours.group(2).replace('-', ':')}"
+                            if match_hours
+                            else "Standardowy"
+                        )
 
-            match_hours = re.search(
-                r"(\d{2}-\d{2})\s*-\s*(\d{2}:\d{2}|\d{2}-\d{2})", name
-            )
-            hours_str = (
-                f"{match_hours.group(1).replace('-', ':')} ->"
-                f" {match_hours.group(2).replace('-', ':')}"
-                if match_hours
-                else "Standardowy"
-            )
-
-            if price > 0:
-              courses.append({"hours": hours_str, "price": price})
-        return (
-            courses  # Zwracamy listę znalezionych kursów (może być pusta jeśli brak miejsc)
-        )
-    except Exception:
-      time.sleep(0.3)
-
-  return None  # Zwracamy None TYLKO w przypadku realnego błędu sieci
+                        if price > 0:
+                            courses.append({"hours": hours_str, "price": price})
+                return courses
+        except Exception:
+            time.sleep(0.3)
+    return None
 
 
-def get_fast_seat_count(
-    from_id: str,
-    from_name: str,
-    to_id: str,
-    to_name: str,
-    date_str: str,
-    target_hours: str,
-    known_seats: int = None,
-) -> int:
-  """Stabilne badanie z odpornością na zakłócenia połączenia."""
-  session = requests.Session()
+def get_fast_seat_count(from_id: str, from_name: str, to_id: str, to_name: str, date_str: str, target_hours: str, known_seats: int = None) -> int:
+    session = requests.Session()
 
-  # 1. Szybki test zgodności ze starym stanem
-  if known_seats and 1 <= known_seats <= 50:
-    res = query_neobus(
-        session,
-        from_id,
-        from_name,
-        to_id,
-        to_name,
-        date_str,
-        passengers=known_seats,
-    )
-    if res is not None and any(c["hours"] == target_hours for c in res):
-      if known_seats == 50:
-        return 50
-      res_plus = query_neobus(
-          session,
-          from_id,
-          from_name,
-          to_id,
-          to_name,
-          date_str,
-          passengers=known_seats + 1,
-      )
-      if res_plus is not None and not any(
-          c["hours"] == target_hours for c in res_plus
-      ):
-        return known_seats
-      high = 50
+    if known_seats and 1 <= known_seats <= 50:
+        res = query_neobus(session, from_id, from_name, to_id, to_name, date_str, passengers=known_seats)
+        if res is not None and any(c["hours"] == target_hours for c in res):
+            if known_seats == 50:
+                return 50
+            res_plus = query_neobus(session, from_id, from_name, to_id, to_name, date_str, passengers=known_seats + 1)
+            if res_plus is not None and not any(c["hours"] == target_hours for c in res_plus):
+                return known_seats
+            high = 50
+        else:
+            high = known_seats
     else:
-      high = known_seats
-  else:
-    high = 50
+        high = 50
 
-  # 2. Binary Search odporne na timeouty
-  low = 1
-  exact_seats = 1
+    low = 1
+    exact_seats = 1
 
-  while low <= high:
-    mid = (low + high) // 2
-    res = query_neobus(
-        session, from_id, from_name, to_id, to_name, date_str, passengers=mid
-    )
+    while low <= high:
+        mid = (low + high) // 2
+        res = query_neobus(session, from_id, from_name, to_id, to_name, date_str, passengers=mid)
+        if res is None:
+            continue
+        if any(c["hours"] == target_hours for c in res):
+            exact_seats = mid
+            low = mid + 1
+        else:
+            high = mid - 1
 
-    if res is None:
-      # W razie błędu sieci nie ucinamy przedziału, tylko ponawiamy krok
-      continue
+    return exact_seats
 
-    if any(c["hours"] == target_hours for c in res):
-      exact_seats = mid
-      low = mid + 1
-    else:
-      high = mid - 1
-
-  return exact_seats
 
 def enrich_course_with_seats(course: dict) -> dict:
     course["seats"] = get_fast_seat_count(
@@ -362,7 +372,6 @@ def enrich_course_with_seats(course: dict) -> dict:
 def check_route_base(route_label: str, from_id: str, from_name: str, to_id: str, to_name: str, dates_list: list, known_dict: dict):
     print(f"🚌 Skanuję siatkę połączeń: {route_label}...")
     session = requests.Session()
-    
     courses = []
     empty_days = 0
 
@@ -400,7 +409,7 @@ def check_route_base(route_label: str, from_id: str, from_name: str, to_id: str,
 
 def main():
     start_t = time.time()
-    print("=== SZYBKI MONITORING NEOBUS (DELTA CHECK 100% MIEJSC) ===")
+    print("=== SZYBKI MONITORING NEOBUS (DELTA CHECK + AUTO-RAPORT) ===")
 
     dates = generate_dynamic_dates(DAYS_FORWARD_SEARCH)
 
@@ -417,7 +426,7 @@ def main():
 
     all_courses = courses_gli_dom + courses_dom_gli
     total_count = len(all_courses)
-    print(f"🚀 Szybkie badanie miejsc metodą Delta Check dla {total_count} kursów ({MAX_WORKERS} wątków)...")
+    print(f"🚀 Badanie miejsc (Delta Check) dla {total_count} kursów ({MAX_WORKERS} wątków)...")
 
     # 3. Równoległe badanie miejsc
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
@@ -432,7 +441,10 @@ def main():
     save_route_to_csv(courses_gli_dom, CSV_GLIWICE_DOMARADZ)
     save_route_to_csv(courses_dom_gli, CSV_DOMARADZ_GLIWICE)
 
-    # 5. Filtrowanie okazji i wysyłanie alertów Discord
+    # 5. Generowanie raportu README.md
+    generate_markdown_readme(courses_gli_dom, courses_dom_gli)
+
+    # 6. Filtrowanie okazji i wysyłanie alertów Discord
     my_cheap_tickets = []
     for c in courses_gli_dom:
         if 0 < c["price"] <= TARGET_MAX_PRICE and c["date"] in MY_TRIP_DATES_GLIWICE_DOMARADZ:
@@ -449,7 +461,7 @@ def main():
         print(f"[i] Brak tanich biletów (<= {TARGET_MAX_PRICE:.2f} PLN) na Twoje terminy.")
 
     total_time = time.time() - start_t
-    print(f"⏱️ Zbadano 100% kursów w czasie: {total_time:.2f} s")
+    print(f"⏱️ Gotowe! Czas wykonania: {total_time:.2f} s")
 
 
 if __name__ == "__main__":
