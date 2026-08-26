@@ -150,16 +150,48 @@ def get_status_badge(seats) -> str:
     return "⚪"
 
 
+def get_recent_history_changes(csv_filename: str, route_label: str, limit: int = 8) -> list:
+    """Wczytuje i formatuje ostatnie zarejestrowane zmiany z bazy CSV."""
+    if not os.path.isfile(csv_filename):
+        return []
+    
+    rows = []
+    try:
+        with open(csv_filename, mode="r", encoding="utf-8") as f:
+            reader = list(csv.DictReader(f))
+            # Pobieramy najświeższe wpisy od dołu
+            for row in reversed(reader):
+                check_time = row.get("Data sprawdzenia", "")
+                k_date = row.get("Data kursu", "")
+                k_hour = row.get("Godzina kursu", "")
+                price = row.get("Cena (PLN)", "")
+                seats = row.get("Wolne miejsca", "B/D")
+                
+                rows.append({
+                    "time": check_time,
+                    "route": route_label,
+                    "course": f"📅 {k_date} ({k_hour})",
+                    "price": f"{float(price):.2f} PLN" if price else "B/D",
+                    "seats": seats
+                })
+                if len(rows) >= limit:
+                    break
+    except Exception:
+        pass
+    return rows
+
+
 def generate_markdown_readme(courses_gli_dom: list, courses_dom_gli: list):
-    """Generuje interaktywną macierz obłożenia w pliku README.md."""
+    """Generuje kompletny raport w README.md z tabelami, historią i radarem obłożenia."""
     now_str = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
 
+    # 1. Nagłówek i tabele obserwowanych wyjazdów
     md = [
-        "# 🚌 Neobus Sentinel & Fare Hunter\n",
-        f"> **Ostatnia aktualizacja:** `{now_str}`  \n",
-        "> 🟢 **Dużo miejsc (26-50)** | 🟡 **Średnie obłożenie (6-25)** | 🔴 **Ostatnie miejsca (1-5)**\n",
-        "## 📍 Trasa: Gliwice ➔ Domaradz (Wyjazdy)\n",
-        "| Data | Godzina odjazdu | Wolne miejsca | Cena | Link |\n",
+        "# 🚌 Neobus Sentinel & Obserwatorium Podróży\n\n",
+        f"> 🕒 **Ostatnia aktualizacja:** `{now_str}`  \n",
+        "> 🟢 **Dużo miejsc (26–50)** | 🟡 **Średnie obłożenie (6–25)** | 🔴 **Ostatnie miejsca (1–5)**\n\n",
+        "## 📍 Twoje obserwowane wyjazdy (Gliwice ➔ Domaradz)\n\n",
+        "| Data | Godzina odjazdu | Wolne miejsca | Cena | Zakup |\n",
         "| :--- | :--- | :--- | :--- | :---: |\n"
     ]
 
@@ -168,12 +200,12 @@ def generate_markdown_readme(courses_gli_dom: list, courses_dom_gli: list):
             seats_val = c.get("seats", "B/D")
             badge = get_status_badge(seats_val)
             seats_bar = render_progress_bar(seats_val) if isinstance(seats_val, int) else "B/D"
-            price_tag = f"**{c['price']:.2f} PLN**" if c['price'] <= TARGET_MAX_PRICE else f"{c['price']:.2f} PLN"
+            price_tag = f"🔥 **{c['price']:.2f} PLN**" if c['price'] <= TARGET_MAX_PRICE else f"{c['price']:.2f} PLN"
             md.append(f"| 📅 **{c['date']}** | ⏰ {c['hours']} | {badge} `{seats_bar}` | {price_tag} | [Kup bilet](https://neobus.pl/) |\n")
 
     md.extend([
-        "\n## 📍 Trasa: Domaradz ➔ Gliwice (Powroty)\n",
-        "| Data | Godzina odjazdu | Wolne miejsca | Cena | Link |\n",
+        "\n## 📍 Twoje obserwowane powroty (Domaradz ➔ Gliwice)\n\n",
+        "| Data | Godzina odjazdu | Wolne miejsca | Cena | Zakup |\n",
         "| :--- | :--- | :--- | :--- | :---: |\n"
     ])
 
@@ -182,12 +214,54 @@ def generate_markdown_readme(courses_gli_dom: list, courses_dom_gli: list):
             seats_val = c.get("seats", "B/D")
             badge = get_status_badge(seats_val)
             seats_bar = render_progress_bar(seats_val) if isinstance(seats_val, int) else "B/D"
-            price_tag = f"**{c['price']:.2f} PLN**" if c['price'] <= TARGET_MAX_PRICE else f"{c['price']:.2f} PLN"
+            price_tag = f"🔥 **{c['price']:.2f} PLN**" if c['price'] <= TARGET_MAX_PRICE else f"{c['price']:.2f} PLN"
             md.append(f"| 📅 **{c['date']}** | ⏰ {c['hours']} | {badge} `{seats_bar}` | {price_tag} | [Kup bilet](https://neobus.pl/) |\n")
+
+    # 2. Ostatnie zarejestrowane zmiany cen i ubywających miejsc (Live Feed)
+    recent_gli = get_recent_history_changes(CSV_GLIWICE_DOMARADZ, "Gliwice ➔ Domaradz", limit=6)
+    recent_dom = get_recent_history_changes(CSV_DOMARADZ_GLIWICE, "Domaradz ➔ Gliwice", limit=6)
+    recent_all = sorted(recent_gli + recent_dom, key=lambda x: x["time"], reverse=True)[:10]
+
+    md.extend([
+        "\n---\n\n",
+        "## ⚡ Ostatnie zarejestrowane zmiany cen i stanu miejsc\n\n",
+        "> *Wiersze poniżej reprezentują faktycznie odnotowane zmiany w bazie Neobusa.*\n\n",
+        "| Czas sprawdzenia | Trasa | Kurs | Cena | Zarejestrowane miejsca |\n",
+        "| :--- | :--- | :--- | :--- | :---: |\n"
+    ])
+
+    if recent_all:
+        for r in recent_all:
+            s_val = int(r["seats"]) if r["seats"].isdigit() else "B/D"
+            badge = get_status_badge(s_val)
+            seats_label = f"{badge} **{s_val} szt.**" if isinstance(s_val, int) else r["seats"]
+            md.append(f"| `{r['time']}` | {r['route']} | {r['course']} | **{r['price']}** | {seats_label} |\n")
+    else:
+        md.append("| Brak wcześniejszych wpisów | - | - | - | - |\n")
+
+    # 3. Globalny Radar Obłożenia wszystkich 120 dni (Najbardziej zapełnione dni)
+    all_active = courses_gli_dom + courses_dom_gli
+    valid_seats_courses = [c for c in all_active if isinstance(c.get("seats"), int)]
+    
+    # Sortujemy po najmniejszej liczbie wolnych miejsc (najbardziej oblegane)
+    most_booked = sorted(valid_seats_courses, key=lambda x: x["seats"])[:10]
+
+    md.extend([
+        "\n---\n\n",
+        "## 🚨 Radar Obłożenia: Najbardziej oblegane kursy w całym kalendarzu (TOP 10)\n\n",
+        "| Trasa | Data i godzina | Wolne miejsca | Obłożenie | Cena |\n",
+        "| :--- | :--- | :--- | :--- | :---: |\n"
+    ])
+
+    for b in most_booked:
+        badge = get_status_badge(b["seats"])
+        bar = render_progress_bar(b["seats"])
+        occupied_pct = int(((50 - b["seats"]) / 50) * 100)
+        md.append(f"| {b['route']} | 📅 **{b['date']}** ({b['hours']}) | {badge} `{bar}` | **{occupied_pct}% zajęte** | {b['price']:.2f} PLN |\n")
 
     with open(README_FILE, "w", encoding="utf-8") as f:
         f.writelines(md)
-    print("📄 Wygenerowano zaktualizowany raport README.md.")
+    print("📄 Wygenerowano rozszerzony raport README.md z historią i radarem obłożenia.")
 
 
 # =====================================================================
