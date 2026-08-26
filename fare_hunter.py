@@ -208,84 +208,143 @@ def check_and_notify_new_schedule(active_dates: list):
 #                    ZAPYTANIA API I FAST PROBING
 # =====================================================================
 
-def query_neobus(session: requests.Session, from_id: str, from_name: str, to_id: str, to_name: str, date_str: str, passengers: int = 1):
-    payload = {
-        "ajax": "true",
-        "dataType": "json",
-        "module": "neotickets",
-        "step": "1",
-        "ticket_type": TICKET_TYPE,
-        "initial_stop": from_id,
-        "final_stop": to_id,
-        "passengers": str(passengers),
-        "date_there": date_str,
-        "date_return": "",
-        "initial_stop_name": from_name,
-        "final_stop_name": to_name,
-    }
+def query_neobus(
+    session: requests.Session,
+    from_id: str,
+    from_name: str,
+    to_id: str,
+    to_name: str,
+    date_str: str,
+    passengers: int = 1,
+    retries: int = 3,
+):
+  """Wysyła zapytanie z automatycznym wznawianiem przy błędach sieciowych."""
+  payload = {
+      "ajax": "true",
+      "dataType": "json",
+      "module": "neotickets",
+      "step": "1",
+      "ticket_type": TICKET_TYPE,
+      "initial_stop": from_id,
+      "final_stop": to_id,
+      "passengers": str(passengers),
+      "date_there": date_str,
+      "date_return": "",
+      "initial_stop_name": from_name,
+      "final_stop_name": to_name,
+  }
+
+  for attempt in range(retries):
     try:
-        resp = session.post("https://neobus.pl/", data=payload, headers=HEADERS, timeout=8)
-        raw = resp.json() if resp.status_code == 200 else {}
-    except Exception:
-        return []
+      resp = session.post(
+          "https://neobus.pl/", data=payload, headers=HEADERS, timeout=12
+      )
+      if resp.status_code == 200:
+        raw = resp.json()
+        content = raw.get("neotickets", raw) if isinstance(raw, dict) else raw
+        data = json.loads(content) if isinstance(content, str) else content
 
-    content = raw.get("neotickets", raw) if isinstance(raw, dict) else raw
-    data = json.loads(content) if isinstance(content, str) else content
-
-    courses = []
-    if isinstance(data, dict) and "ga4_data" in data and len(data["ga4_data"]) > 0:
-        for it in data["ga4_data"][0].get("items", []):
+        courses = []
+        if (
+            isinstance(data, dict)
+            and "ga4_data" in data
+            and len(data["ga4_data"]) > 0
+        ):
+          for it in data["ga4_data"][0].get("items", []):
             name = it.get("item_name", "")
             price = it.get("price") or it.get("discount", 0.0)
             try:
-                price = float(price)
+              price = float(price)
             except Exception:
-                price = 0.0
+              price = 0.0
 
-            match_hours = re.search(r"(\d{2}-\d{2})\s*-\s*(\d{2}:\d{2}|\d{2}-\d{2})", name)
+            match_hours = re.search(
+                r"(\d{2}-\d{2})\s*-\s*(\d{2}:\d{2}|\d{2}-\d{2})", name
+            )
             hours_str = (
-                f"{match_hours.group(1).replace('-', ':')} -> {match_hours.group(2).replace('-', ':')}"
+                f"{match_hours.group(1).replace('-', ':')} ->"
+                f" {match_hours.group(2).replace('-', ':')}"
                 if match_hours
                 else "Standardowy"
             )
 
             if price > 0:
-                courses.append({"hours": hours_str, "price": price})
-    return courses
+              courses.append({"hours": hours_str, "price": price})
+        return (
+            courses  # Zwracamy listę znalezionych kursów (może być pusta jeśli brak miejsc)
+        )
+    except Exception:
+      time.sleep(0.3)
+
+  return None  # Zwracamy None TYLKO w przypadku realnego błędu sieci
 
 
-def get_fast_seat_count(from_id: str, from_name: str, to_id: str, to_name: str, date_str: str, target_hours: str, known_seats: int = None) -> int:
-    """Błyskawiczne sprawdzanie miejsc (Delta Check)."""
-    session = requests.Session()
+def get_fast_seat_count(
+    from_id: str,
+    from_name: str,
+    to_id: str,
+    to_name: str,
+    date_str: str,
+    target_hours: str,
+    known_seats: int = None,
+) -> int:
+  """Stabilne badanie z odpornością na zakłócenia połączenia."""
+  session = requests.Session()
 
-    # Szybki test: czy liczba miejsc się NIE zmieniła? (1 zapytanie)
-    if known_seats and 1 <= known_seats <= 50:
-        res = query_neobus(session, from_id, from_name, to_id, to_name, date_str, passengers=known_seats)
-        if any(c["hours"] == target_hours for c in res):
-            # Miejsc jest co najmniej tyle samo — sprawdzamy czy nie doszły nowe zwroty
-            if known_seats == 50:
-                return 50
-            res_plus = query_neobus(session, from_id, from_name, to_id, to_name, date_str, passengers=known_seats + 1)
-            if not any(c["hours"] == target_hours for c in res_plus):
-                return known_seats  # Liczba miejsc w 100% bez zmian!
-        high = known_seats
+  # 1. Szybki test zgodności ze starym stanem
+  if known_seats and 1 <= known_seats <= 50:
+    res = query_neobus(
+        session,
+        from_id,
+        from_name,
+        to_id,
+        to_name,
+        date_str,
+        passengers=known_seats,
+    )
+    if res is not None and any(c["hours"] == target_hours for c in res):
+      if known_seats == 50:
+        return 50
+      res_plus = query_neobus(
+          session,
+          from_id,
+          from_name,
+          to_id,
+          to_name,
+          date_str,
+          passengers=known_seats + 1,
+      )
+      if res_plus is not None and not any(
+          c["hours"] == target_hours for c in res_plus
+      ):
+        return known_seats
+      high = 50
     else:
-        high = 50
+      high = known_seats
+  else:
+    high = 50
 
-    low = 1
-    exact_seats = 1
+  # 2. Binary Search odporne na timeouty
+  low = 1
+  exact_seats = 1
 
-    while low <= high:
-        mid = (low + high) // 2
-        res = query_neobus(session, from_id, from_name, to_id, to_name, date_str, passengers=mid)
-        if any(c["hours"] == target_hours for c in res):
-            exact_seats = mid
-            low = mid + 1
-        else:
-            high = mid - 1
+  while low <= high:
+    mid = (low + high) // 2
+    res = query_neobus(
+        session, from_id, from_name, to_id, to_name, date_str, passengers=mid
+    )
 
-    return exact_seats
+    if res is None:
+      # W razie błędu sieci nie ucinamy przedziału, tylko ponawiamy krok
+      continue
 
+    if any(c["hours"] == target_hours for c in res):
+      exact_seats = mid
+      low = mid + 1
+    else:
+      high = mid - 1
+
+  return exact_seats
 
 def enrich_course_with_seats(course: dict) -> dict:
     course["seats"] = get_fast_seat_count(
