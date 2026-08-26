@@ -207,115 +207,91 @@ def get_recent_history_changes(
 
 
 def generate_markdown_readme(courses_gli_dom: list, courses_dom_gli: list):
-  """Tworzy zaktualizowany plik README.md."""
-  now_str = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+    """Tworzy zaktualizowany plik README.md."""
+    now_str = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
 
-  md = [
-      "# 🚌 Neobus Sentinel & Obserwatorium Podróży\n\n",
-      f"> 🕒 **Ostatnia aktualizacja:** `{now_str}`  \n",
-      (
-          "> 🟢 **Dużo miejsc (26–50)** | 🟡 **Średnie obłożenie (6–25)** | 🔴"
-          " **Ostatnie miejsca (1–5)**\n\n"
-      ),
-      "## 📍 Twoje obserwowane wyjazdy (Gliwice ➔ Domaradz)\n\n",
-      "| Data | Godzina odjazdu | Wolne miejsca | Cena | Zakup |\n",
-      "| :--- | :--- | :--- | :--- | :---: |\n",
-  ]
+    md = [
+        "# 🚌 Neobus Sentinel & Obserwatorium Podróży\n\n",
+        f"> 🕒 **Ostatnia aktualizacja:** `{now_str}`  \n",
+        "> 🟢 **Dużo miejsc (26–50)** | 🟡 **Średnie obłożenie (6–25)** | 🔴 **Ostatnie miejsca (1–5)**\n\n",
+        "## 📍 Twoje obserwowane wyjazdy (Gliwice ➔ Domaradz)\n\n",
+        "| Data | Godzina odjazdu | Wolne miejsca | Cena | Zakup |\n",
+        "| :--- | :--- | :--- | :--- | :---: |\n"
+    ]
 
-  for c in courses_gli_dom:
-    if c["date"] in MY_TRIP_DATES_GLIWICE_DOMARADZ:
-      seats_val = c.get("seats", "B/D")
-      badge = get_status_badge(seats_val)
-      seats_bar = (
-          render_progress_bar(seats_val)
-          if isinstance(seats_val, int)
-          else "B/D"
-      )
-      price_tag = (
-          f"🔥 **{c['price']:.2f} PLN**"
-          if c["price"] <= TARGET_MAX_PRICE
-          else f"{c['price']:.2f} PLN"
-      )
-      md.append(
-          f"| 📅 **{c['date']}** | ⏰ {c['hours']} | {badge} `{seats_bar}` |"
-          f" {price_tag} | [Kup bilet](https://neobus.pl/) |\n"
-      )
+    for c in courses_gli_dom:
+        if c["date"] in MY_TRIP_DATES_GLIWICE_DOMARADZ:
+            seats_val = c.get("seats", "B/D")
+            badge = get_status_badge(seats_val)
+            seats_bar = render_progress_bar(seats_val) if isinstance(seats_val, int) else "B/D"
+            price_tag = f"🔥 **{c['price']:.2f} PLN**" if c["price"] <= TARGET_MAX_PRICE else f"{c['price']:.2f} PLN"
+            md.append(f"| 📅 **{c['date']}** | ⏰ {c['hours']} | {badge} `{seats_bar}` | {price_tag} | [Kup bilet](https://neobus.pl/) |\n")
 
-  md.extend([
+    md.extend([
+        "\n## 📍 Twoje obserwowane powroty (Domaradz ➔ Gliwice)\n\n",
+        "| Data | Godzina odjazdu | Wolne miejsca | Cena | Zakup |\n",
+        "| :--- | :--- | :--- | :--- | :---: |\n"
+    ])
+
+    for c in courses_dom_gli:
+        if c["date"] in MY_TRIP_DATES_DOMARADZ_GLIWICE:
+            seats_val = c.get("seats", "B/D")
+            badge = get_status_badge(seats_val)
+            seats_bar = render_progress_bar(seats_val) if isinstance(seats_val, int) else "B/D"
+            price_tag = f"🔥 **{c['price']:.2f} PLN**" if c["price"] <= TARGET_MAX_PRICE else f"{c['price']:.2f} PLN"
+            md.append(f"| 📅 **{c['date']}** | ⏰ {c['hours']} | {badge} `{seats_bar}` | {price_tag} | [Kup bilet](https://neobus.pl/) |\n")
+
+    # 1. Historia zmian delty
+    recent_gli = get_recent_history_changes(CSV_GLIWICE_DOMARADZ, "Gliwice ➔ Domaradz", limit=5)
+    recent_dom = get_recent_history_changes(CSV_DOMARADZ_GLIWICE, "Domaradz ➔ Gliwice", limit=5)
+    recent_all = sorted(recent_gli + recent_dom, key=lambda x: x["time"], reverse=True)[:8]
+
+    md.extend([
+        "\n---\n\n",
+        "## ⚡ Ostatnie zarejestrowane zmiany cen i stanu miejsc\n\n",
+        "> *Poniżej prezentowane są różnice względem poprzedniego sprawdzenia (np. ubytek foteli lub obniżka ceny).*\n\n",
+        "| Data sprawdzenia | Trasa | Kurs | Zmiana ceny | Zmiana miejsc |\n",
+        "| :--- | :--- | :--- | :--- | :--- |\n"
+    ])
+
+    if recent_all:
+        for r in recent_all:
+            md.append(f"| `{r['time']}` | {r['route']} | {r['course']} | {r['price_change']} | {r['seats_change']} |\n")
+    else:
+        md.append("| - | - | Brak odnotowanych zmian w ostatnim cyklu | - | - |\n")
+
+    # 2. TOP 10 najbardziej obłożonych kursów
+    all_active = courses_gli_dom + courses_dom_gli
+    valid_seats_courses = [c for c in all_active if isinstance(c.get("seats"), int)]
+    most_booked = sorted(valid_seats_courses, key=lambda x: x["seats"])[:10]
+
+    md.extend([
+        "\n---\n\n",
+        "## 🚨 Radar Obłożenia: Najbardziej oblegane kursy w całym kalendarzu (TOP 10)\n\n",
+        "| Trasa | Data i godzina | Wolne miejsca | Obłożenie | Cena |\n",
+        "| :--- | :--- | :--- | :--- | :---: |\n"
+    ])
+
+    for b in most_booked:
+        badge = get_status_badge(b["seats"])
+        bar = render_progress_bar(b["seats"])
+        occupied_pct = int(((50 - b["seats"]) / 50) * 100)
+        md.append(f"| {b['route']} | 📅 **{b['date']}** ({b['hours']}) | {badge} `{bar}` | **{occupied_pct}% zajęte** | {b['price']:.2f} PLN |\n")
+
+    # 3. Dwie dedykowane heatmapy kalendarzowe
+    md.extend([
         "\n---\n\n",
         "## 📊 Kalendarz Obłożenia Miejsc (Wszystkie dni i godziny)\n\n",
         "> *Im ciemniejszy czerwony kolor, tym mniej miejsc zostało w autokarze (ostatnie bilety).*\n\n",
-        "### 🚌 Trasa: Gliwice ➔ Domaradz\n",
+        "### 🚌 Trasa: Gliwice ➔ Domaradz\n\n",
         "![Heatmapa Gliwice -> Domaradz](heatmapa_gliwice_domaradz.png)\n\n",
-        "### 🚌 Trasa: Domaradz ➔ Gliwice\n",
-        "![Heatmapa Domaradz -> Gliwice](heatmapa_domaradz_gliwice.png)\n",
+        "### 🚌 Trasa: Domaradz ➔ Gliwice\n\n",
+        "![Heatmapa Domaradz -> Gliwice](heatmapa_domaradz_gliwice.png)\n"
     ])
-  for c in courses_dom_gli:
-    if c["date"] in MY_TRIP_DATES_DOMARADZ_GLIWICE:
-      seats_val = c.get("seats", "B/D")
-      badge = get_status_badge(seats_val)
-      seats_bar = (
-          render_progress_bar(seats_val)
-          if isinstance(seats_val, int)
-          else "B/D"
-      )
-      price_tag = (
-          f"🔥 **{c['price']:.2f} PLN**"
-          if c["price"] <= TARGET_MAX_PRICE
-          else f"{c['price']:.2f} PLN"
-      )
-      md.append(
-          f"| 📅 **{c['date']}** | ⏰ {c['hours']} | {badge} `{seats_bar}` |"
-          f" {price_tag} | [Kup bilet](https://neobus.pl/) |\n"
-      )
 
-  # Historia zmian z formatem "od -> do"
-  recent_gli = get_recent_history_changes(
-      CSV_GLIWICE_DOMARADZ, "Gliwice ➔ Domaradz", limit=5
-  )
-  recent_dom = get_recent_history_changes(
-      CSV_DOMARADZ_GLIWICE, "Domaradz ➔ Gliwice", limit=5
-  )
-  recent_all = sorted(
-      recent_gli + recent_dom, key=lambda x: x["time"], reverse=True
-  )[:8]
-
-  md.extend([
-      "\n---\n\n",
-      "## ⚡ Ostatnie zarejestrowane zmiany cen i stanu miejsc\n\n",
-      (
-          "> *Poniżej prezentowane są różnice względem poprzedniego sprawdzenia"
-          " (np. ubytek foteli lub obniżka ceny).*\n\n"
-      ),
-      "| Data sprawdzenia | Trasa | Kurs | Zmiana ceny | Zmiana miejsc |\n",
-      "| :--- | :--- | :--- | :--- | :--- |\n",
-  ])
-
-  if recent_all:
-    for r in recent_all:
-      md.append(
-          f"| `{r['time']}` | {r['route']} | {r['course']} |"
-          f" {r['price_change']} | {r['seats_change']} |\n"
-      )
-  else:
-    md.append(
-      "| - | - | Brak odnotowanych zmian w ostatnim cyklu | - | - |\n"
-    )
-
-  # Dołączenie Heatmapy na końcu pliku
-  md.extend([
-      "\n---\n\n",
-      "## 📊 Heatmapa Obłożenia: Wszystkie kursy i dni tygodnia\n\n",
-      (
-          "> *Wykres pokazuje procentowe zapełnienie autokarów w zależności od"
-          " dnia tygodnia i pory odjazdu.*\n\n"
-      ),
-      "![Heatmapa Obłożenia](wykres_oblozenie_heatmap.png)\n",
-  ])
-
-  with open(README_FILE, "w", encoding="utf-8") as f:
-    f.writelines(md)
-  print("📄 Wygenerowano README.md z historią delty i heatmapą.")
+    with open(README_FILE, "w", encoding="utf-8") as f:
+        f.writelines(md)
+    print("📄 Wygenerowano README.md z historią delty, TOP 10 i heatmapami.")
 
 
 # =====================================================================
