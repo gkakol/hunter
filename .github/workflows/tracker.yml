@@ -3,7 +3,7 @@ name: Monitor Cen i Wykresy Neobus
 on:
   schedule:
     # Uruchamianie co 20 minut
-    - cron: '*/15 * * * *'
+    - cron: '*/20 * * * *'
   workflow_dispatch: # Możliwość uruchomienia ręcznego
 
 permissions:
