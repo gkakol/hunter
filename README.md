@@ -1,6 +1,6 @@
 # 🚌 Neobus Sentinel & Obserwatorium Podróży
 
-> 🕒 **Ostatnia aktualizacja:** `28.08.2026 02:45:47`  
+> 🕒 **Ostatnia aktualizacja:** `28.08.2026 03:16:10`  
 > 🟢 **Dużo miejsc (26–50)** | 🟡 **Średnie obłożenie (6–25)** | 🔴 **Ostatnie miejsca (1–5)**
 
 ## 📍 Twoje obserwowane wyjazdy (Gliwice ➔ Domaradz)
@@ -127,6 +127,7 @@
 
 | Data sprawdzenia | Trasa | Kurs | Zmiana ceny | Zmiana miejsc |
 | :--- | :--- | :--- | :--- | :--- |
+| `2026-08-28 03:16:10` | Domaradz ➔ Gliwice | 📅 30.08.2026 (00:38 -> 05:22) | 95.00 zł | 49 ➔ **48 szt.** (-1) |
 | `2026-08-28 02:17:22` | Domaradz ➔ Gliwice | 📅 28.08.2026 (07:21 -> 13:00) | 95.00 zł | 20 ➔ **19 szt.** (-1) |
 | `2026-08-28 01:52:08` | Gliwice ➔ Domaradz | 📅 30.08.2026 (17:40 -> 22:48) | 100.00 zł | 44 ➔ **47 szt.** (+3) |
 | `2026-08-28 01:52:08` | Gliwice ➔ Domaradz | 📅 16.09.2026 (00:20 -> 05:24) | 100.00 zł | 23 ➔ **21 szt.** (-2) |
@@ -134,7 +135,6 @@
 | `2026-08-28 01:52:08` | Domaradz ➔ Gliwice | 📅 12.09.2026 (00:38 -> 05:22) | 95.00 zł | 44 ➔ **43 szt.** (-1) |
 | `2026-08-27 22:17:57` | Gliwice ➔ Domaradz | 📅 28.08.2026 (14:00 -> 19:26) | 100.00 zł | 44 ➔ **45 szt.** (+1) |
 | `2026-08-27 22:17:57` | Domaradz ➔ Gliwice | 📅 29.08.2026 (00:38 -> 05:22) | 95.00 zł | 2 ➔ **1 szt.** (-1) |
-| `2026-08-27 21:47:19` | Gliwice ➔ Domaradz | 📅 28.08.2026 (00:20 -> 05:24) | 100.00 zł | 26 ➔ **24 szt.** (-2) |
 
 ---
 
