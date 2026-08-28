@@ -3,7 +3,7 @@ import subprocess
 import time
 
 # Ustaw swój webhook do Discorda
-os.environ["DISCORD_WEBHOOK_URL"] = "TUTAJ_WKLEJ_SWOJ_WEBHOOK_DISCORD"
+os.environ["DISCORD_WEBHOOK_URL"] =  os.environ.get("DISCORD_WEBHOOK_URL", "")
 
 INTERVAL_MINUTES = 30
 
