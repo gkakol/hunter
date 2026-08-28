@@ -1,6 +1,6 @@
 # 🚌 Neobus Sentinel & Obserwatorium Podróży
 
-> 🕒 **Ostatnia aktualizacja:** `27.08.2026 23:31:41`  
+> 🕒 **Ostatnia aktualizacja:** `28.08.2026 00:05:19`  
 > 🟢 **Dużo miejsc (26–50)** | 🟡 **Średnie obłożenie (6–25)** | 🔴 **Ostatnie miejsca (1–5)**
 
 ## 📍 Twoje obserwowane wyjazdy (Gliwice ➔ Domaradz)
