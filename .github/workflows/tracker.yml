@@ -1,4 +1,4 @@
-name: Monitor Cen i Wykresy Neobus
+name: Monitor Cen
 
 on:
   schedule:
