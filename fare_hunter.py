@@ -211,7 +211,7 @@ def generate_markdown_readme(courses_gli_dom: list, courses_dom_gli: list):
     now_str = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
 
     md = [
-        "# 🚌 Neobus Sentinel & Obserwatorium Podróży\n\n",
+        "# 🚌 Sentinel - Obserwatorium Podróży\n\n",
         f"> 🕒 **Ostatnia aktualizacja:** `{now_str}`  \n",
         "> 🟢 **Dużo miejsc (26–50)** | 🟡 **Średnie obłożenie (6–25)** | 🔴 **Ostatnie miejsca (1–5)**\n\n",
         "## 📍 Twoje obserwowane wyjazdy (Gliwice ➔ Domaradz)\n\n",
