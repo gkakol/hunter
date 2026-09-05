@@ -1,6 +1,6 @@
 # 🚌 Sentinel - Obserwatorium Podróży
 
-> 🕒 **Ostatnia aktualizacja:** `05.09.2026 10:43:11`  
+> 🕒 **Ostatnia aktualizacja:** `05.09.2026 11:04:02`  
 > 🟢 **Dużo miejsc (26–50)** | 🟡 **Średnie obłożenie (6–25)** | 🔴 **Ostatnie miejsca (1–5)**
 
 ## 📍 Twoje obserwowane wyjazdy (Gliwice ➔ Domaradz)
